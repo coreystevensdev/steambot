@@ -18,6 +18,8 @@ import stripe
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
 
+from langgraph.errors import GraphInterrupt
+
 from steambot.api.main import get_graph, get_http_client
 from steambot.state import ApprovedPick, PickCandidate, SteamBotState
 
@@ -102,9 +104,11 @@ async def start_run(req: StartRunRequest):
         else:
             _runs[run_id]["status"] = "complete"
             _runs[run_id]["state"] = result
-    except Exception as exc:
-        # Graph paused at HITL interrupt -- candidates are ready for review.
+    except GraphInterrupt:
         _runs[run_id]["status"] = "awaiting_review"
+    except Exception as exc:
+        _runs[run_id]["status"] = "error"
+        _runs[run_id]["error"] = str(exc)
 
     return StartRunResponse(
         run_id=run_id,

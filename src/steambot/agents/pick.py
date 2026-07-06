@@ -182,7 +182,7 @@ async def pick_agent(state: SteamBotState) -> dict:
         implied_prob = american_to_prob(retail_price)
         edge_pct = blended_prob - implied_prob
         if edge_pct < _MIN_EDGE_PCT:
-            logger.debug("pick_agent: skipping %s edge=%.1%% < threshold", selection, edge_pct)
+            logger.debug("pick_agent: skipping %s edge=%.1f%% < threshold", selection, edge_pct)
             continue
 
         ev_pct = _compute_ev(blended_prob, retail_price)
