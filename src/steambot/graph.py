@@ -45,7 +45,6 @@ async def _hitl_review(state: SteamBotState) -> dict:
     if not candidates:
         return {"approved_picks": []}
 
-    # Pause the graph and surface the candidates to the UI.
     approved_ids: list[str] = interrupt(
         {
             "action": "review_picks",
@@ -53,7 +52,6 @@ async def _hitl_review(state: SteamBotState) -> dict:
         }
     )
 
-    # After resume, build ApprovedPick objects from the approved candidate IDs.
     from datetime import datetime, timezone
 
     cand_map = {c.pick_id: c for c in candidates}

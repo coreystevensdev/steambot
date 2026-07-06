@@ -32,11 +32,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ---------------------------------------------------------------------------
-# Request / response models
-# ---------------------------------------------------------------------------
-
-
 class StartRunRequest(BaseModel):
     sport: str = "americanfootball_nfl"
     target_date: str = ""  # defaults to today
@@ -64,11 +59,6 @@ class ApprovePicksRequest(BaseModel):
 
 # In-memory run registry (per-instance; replace with DB for production).
 _runs: dict[str, dict] = {}
-
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
 
 
 @router.get("/health")
@@ -142,7 +132,8 @@ async def get_run(run_id: str):
             approved_picks=approved,
             error=state.values.get("error"),
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("get_run: could not fetch graph state for run_id=%s: %s", run_id, exc)
         return RunStatusResponse(
             run_id=run_id,
             status=run.get("status", "unknown"),
@@ -190,15 +181,15 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     customer_id: str | None = None
-    grant: bool | None = None
+    is_pro_grant: bool | None = None
     if event["type"] == "customer.subscription.created":
         customer_id = event["data"]["object"]["customer"]
-        grant = True
+        is_pro_grant = True
     elif event["type"] == "customer.subscription.deleted":
         customer_id = event["data"]["object"]["customer"]
-        grant = False
+        is_pro_grant = False
 
-    if customer_id is not None and grant is not None:
+    if customer_id is not None and is_pro_grant is not None:
         factory = get_session_factory()
         async with factory() as session:
             result = await session.execute(
@@ -206,7 +197,7 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
             )
             user = result.scalar_one_or_none()
             if user:
-                user.is_pro = grant
+                user.is_pro = is_pro_grant
                 await session.commit()
             else:
                 logger.warning(

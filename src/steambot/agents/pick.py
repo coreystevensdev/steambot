@@ -166,7 +166,6 @@ async def pick_agent(state: SteamBotState) -> dict:
         if not game or not fl:
             continue
 
-        # Identify which fair_prob maps to this selection
         idx = next((i for i, o in enumerate(fl.outcomes) if selection.startswith(o) or o in selection), None)
         if idx is None:
             continue

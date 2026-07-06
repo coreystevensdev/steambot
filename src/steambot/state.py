@@ -14,11 +14,6 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 
-# ---------------------------------------------------------------------------
-# Odds and market models
-# ---------------------------------------------------------------------------
-
-
 class Outcome(BaseModel):
     name: str
     price: int  # American odds
@@ -45,11 +40,6 @@ class GameSnapshot(BaseModel):
     bookmakers: list[BookmakerOdds]
 
 
-# ---------------------------------------------------------------------------
-# Fair probability and edge models
-# ---------------------------------------------------------------------------
-
-
 def american_to_prob(odds: int) -> float:
     """Convert American odds to raw implied probability (before vig removal)."""
     if odds > 0:
@@ -72,11 +62,6 @@ class FairLine(BaseModel):
     outcomes: list[str]
     fair_probs: list[float]  # indexed to match outcomes; sum to 1.0
     source_book: str
-
-
-# ---------------------------------------------------------------------------
-# Pick and recommendation models
-# ---------------------------------------------------------------------------
 
 
 class PickCandidate(BaseModel):
@@ -114,11 +99,6 @@ class BetSlip(BaseModel):
     price: int
     stake_units: float
     prepared_at: datetime
-
-
-# ---------------------------------------------------------------------------
-# LangGraph state
-# ---------------------------------------------------------------------------
 
 
 class SteamBotState(TypedDict):
