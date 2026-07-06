@@ -1,0 +1,14 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+*.egg-info/
+.venv/
+eval/results.json
+_bmad-output/
+_bmad/
+*_explained.md
+CLAUDE.md
+AGENTS.md
