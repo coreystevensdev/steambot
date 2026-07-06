@@ -1,4 +1,4 @@
-"""Sharpline LangGraph state machine.
+"""SteamBot LangGraph state machine.
 
 Topology:
   odds_agent
@@ -28,13 +28,13 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
-from sharpline.agents.odds import odds_agent
-from sharpline.agents.pick import pick_agent
-from sharpline.agents.validate import validate_agent
-from sharpline.state import ApprovedPick, SharplineState
+from steambot.agents.odds import odds_agent
+from steambot.agents.pick import pick_agent
+from steambot.agents.validate import validate_agent
+from steambot.state import ApprovedPick, SteamBotState
 
 
-async def _hitl_review(state: SharplineState) -> dict:
+async def _hitl_review(state: SteamBotState) -> dict:
     """HITL checkpoint: pause graph, surface candidates to the user for approval.
 
     The API layer calls graph.invoke({...}, config={"thread_id": ...}) to start
@@ -69,19 +69,19 @@ async def _hitl_review(state: SharplineState) -> dict:
     return {"approved_picks": approved_picks}
 
 
-def _route_after_odds(state: SharplineState) -> str:
+def _route_after_odds(state: SteamBotState) -> str:
     if state.get("error"):
         return END
     return "pick_agent"
 
 
 def build_graph(client: httpx.AsyncClient, checkpointer=None) -> StateGraph:
-    """Compile and return the Sharpline LangGraph.
+    """Compile and return the SteamBot LangGraph.
 
     Pass a shared httpx.AsyncClient so nodes that make HTTP calls share a pool.
     Pass a checkpointer (MemorySaver or PostgresSaver) for HITL persistence.
     """
-    g = StateGraph(SharplineState)
+    g = StateGraph(SteamBotState)
 
     g.add_node("odds_agent", partial(odds_agent, client=client))
     g.add_node("pick_agent", pick_agent)

@@ -14,7 +14,7 @@ from datetime import datetime
 
 import httpx
 
-from sharpline.state import BookmakerOdds, GameSnapshot, MarketOdds, Outcome
+from steambot.state import BookmakerOdds, GameSnapshot, MarketOdds, Outcome
 
 _BASE = "https://api.the-odds-api.com/v4"
 

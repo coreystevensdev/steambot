@@ -10,12 +10,12 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from sharpline.state import ApprovedPick, SharplineState
+from steambot.state import ApprovedPick, SteamBotState
 
 logger = logging.getLogger(__name__)
 
 
-async def validate_agent(state: SharplineState) -> dict:
+async def validate_agent(state: SteamBotState) -> dict:
     """Persist approved picks for CLV tracking. No external I/O beyond the DB."""
     approved = state.get("approved_picks", [])
     if not approved:

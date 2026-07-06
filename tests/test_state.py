@@ -2,7 +2,7 @@
 
 import pytest
 
-from sharpline.state import american_to_prob, remove_vig, FairLine, PickCandidate
+from steambot.state import american_to_prob, remove_vig, FairLine, PickCandidate
 from datetime import datetime
 
 

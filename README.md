@@ -1,10 +1,9 @@
-# Sharpline
+# SteamBot
 
-**Live demo:** coming after Railway deploy (ODDS_API_KEY required)
+[![CI](https://github.com/coreystevensdev/steambot/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/steambot/actions)
+[![27 tests](https://img.shields.io/badge/tests-27-brightgreen)](https://github.com/coreystevensdev/steambot/actions)
 
-[![CI](https://github.com/coreystevensdev/sharpline/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/sharpline/actions)
-
-Sharpline is an agentic NFL betting research service that finds closing line value before the market closes. It pulls sharp-book lines from Pinnacle via The Odds API, strips the vig to compute no-vig fair probabilities, then uses Claude to surface picks where retail prices are measurably better than the sharp-market consensus. A LangGraph human-in-the-loop checkpoint requires user approval before any bet slip is prepared.
+SteamBot is an agentic NFL betting research service that finds closing line value before the market closes. It pulls sharp-book lines from Pinnacle via The Odds API, strips the vig to compute no-vig fair probabilities, then uses Claude to surface picks where retail prices are measurably better than the sharp-market consensus. A LangGraph human-in-the-loop checkpoint requires user approval before any bet slip is prepared.
 
 **Problem:** Retail sports bettors lose because they bet off public lines that already carry bookmaker margin. Closing Line Value (CLV) is the market-validated signal that separates long-run winners from losers: if you consistently beat the closing line, you have genuine edge. No public tool automates this research pipeline end-to-end with HITL approval built in.
 
@@ -60,7 +59,7 @@ CLV is the difference between the price you got and the closing line probability
 CLV = closing_probability - bet_probability
 ```
 
-A positive CLV means you beat the market. Sportsbooks use CLV to identify sharp bettors and limit their accounts. Sharpline records `closing_price` and `closing_probability` post-settlement for every approved pick, so you can run `SELECT AVG(clv) FROM picks WHERE result IS NOT NULL` and see whether you're consistently ahead of the market.
+A positive CLV means you beat the market. Sportsbooks use CLV to identify sharp bettors and limit their accounts. SteamBot records `closing_price` and `closing_probability` post-settlement for every approved pick, so you can run `SELECT AVG(clv) FROM picks WHERE result IS NOT NULL` and see whether you're consistently ahead of the market.
 
 ---
 

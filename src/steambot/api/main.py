@@ -1,4 +1,4 @@
-"""Sharpline FastAPI application.
+"""SteamBot FastAPI application.
 
 Serves the picks API + minimal Jinja2 UI for the HITL approval workflow.
 The httpx.AsyncClient and LangGraph checkpointer are shared across requests
@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from sharpline.graph import build_graph
+from steambot.graph import build_graph
 
 _http_client: httpx.AsyncClient | None = None
 _graph = None
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
     _graph = None
 
 
-app = FastAPI(title="Sharpline", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="SteamBot", version="0.1.0", lifespan=lifespan)
 
 
 def get_http_client() -> httpx.AsyncClient:
@@ -47,6 +47,6 @@ def get_graph():
     return _graph
 
 
-from sharpline.api import routes  # noqa: E402 -- import after app is defined
+from steambot.api import routes  # noqa: E402 -- import after app is defined
 
 app.include_router(routes.router)

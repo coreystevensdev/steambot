@@ -2,9 +2,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: sharpline
-      POSTGRES_USER: sharpline
-      POSTGRES_PASSWORD: sharpline
+      POSTGRES_DB: steambot
+      POSTGRES_USER: steambot
+      POSTGRES_PASSWORD: steambot
     ports:
       - "5432:5432"
     volumes:
@@ -15,7 +15,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+psycopg://sharpline:sharpline@db:5432/sharpline
+      DATABASE_URL: postgresql+psycopg://steambot:steambot@db:5432/steambot
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       ODDS_API_KEY: ${ODDS_API_KEY}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}

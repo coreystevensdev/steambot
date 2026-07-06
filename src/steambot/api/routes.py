@@ -1,4 +1,4 @@
-"""Sharpline API routes.
+"""SteamBot API routes.
 
 GET  /health                  -- liveness check
 POST /api/runs                -- start a picks run (triggers odds + pick agents)
@@ -18,8 +18,8 @@ import stripe
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
 
-from sharpline.api.main import get_graph, get_http_client
-from sharpline.state import ApprovedPick, PickCandidate, SharplineState
+from steambot.api.main import get_graph, get_http_client
+from steambot.state import ApprovedPick, PickCandidate, SteamBotState
 
 router = APIRouter()
 
@@ -73,7 +73,7 @@ async def start_run(req: StartRunRequest):
     run_id = str(uuid.uuid4())
     target_date = req.target_date or date.today().isoformat()
 
-    initial: SharplineState = {
+    initial: SteamBotState = {
         "sport": req.sport,
         "target_date": target_date,
         "user_id": req.user_id,

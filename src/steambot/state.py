@@ -1,6 +1,6 @@
-"""LangGraph state schema and Pydantic models for Sharpline.
+"""LangGraph state schema and Pydantic models for SteamBot.
 
-All agent nodes operate on SharplineState. The HITL interrupt checkpoint
+All agent nodes operate on SteamBotState. The HITL interrupt checkpoint
 lives between generate_picks and finalize_picks; the graph saves its state
 to PostgresSaver so the approval session survives server restarts.
 """
@@ -121,7 +121,7 @@ class BetSlip(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class SharplineState(TypedDict):
+class SteamBotState(TypedDict):
     # Input
     sport: str
     target_date: str  # ISO date, e.g., "2026-01-15"

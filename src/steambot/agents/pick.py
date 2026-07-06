@@ -19,13 +19,13 @@ from datetime import datetime
 
 import anthropic
 
-from sharpline.clients.odds_api import RETAIL_BOOKS
-from sharpline.state import (
+from steambot.clients.odds_api import RETAIL_BOOKS
+from steambot.state import (
     BookmakerOdds,
     FairLine,
     GameSnapshot,
     PickCandidate,
-    SharplineState,
+    SteamBotState,
     american_to_prob,
 )
 
@@ -126,7 +126,7 @@ def _build_prompt(games: list[GameSnapshot], fair_lines: list[FairLine]) -> str:
     )
 
 
-async def pick_agent(state: SharplineState) -> dict:
+async def pick_agent(state: SteamBotState) -> dict:
     """Generate pick candidates using Claude. Returns picks to the state for HITL review."""
     games = state.get("games", [])
     fair_lines = state.get("fair_lines", [])
