@@ -24,6 +24,16 @@ async def _settle(window_minutes: int) -> None:
     )
 
 
+async def _create_user(email: str) -> None:
+    from steambot.api.auth import issue_api_key
+    from steambot.db.session import get_session_factory
+
+    user_id, key = await issue_api_key(email, get_session_factory())
+    print(f"user_id={user_id}")
+    print(f"api_key={key}")
+    print("Store the key now; only its hash is kept. Re-running rotates it.")
+
+
 async def _grade(days_from: int) -> None:
     from steambot.clients.odds_api import fetch_nfl_scores
     from steambot.clv import grade_results
@@ -59,11 +69,17 @@ def main() -> None:
         default=3,
         help="how many days back to fetch scores, max 3 (default 3)",
     )
+    create_user = sub.add_parser(
+        "create-user", help="create a user (or rotate their key) and print the API key once"
+    )
+    create_user.add_argument("--email", required=True)
     args = parser.parse_args()
     if args.command == "settle":
         asyncio.run(_settle(args.window_minutes))
     elif args.command == "grade":
         asyncio.run(_grade(args.days_from))
+    elif args.command == "create-user":
+        asyncio.run(_create_user(args.email))
 
 
 if __name__ == "__main__":

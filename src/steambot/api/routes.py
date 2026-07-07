@@ -16,12 +16,13 @@ import uuid
 from datetime import date, datetime, timezone
 
 import stripe
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import desc, select
 
 from langgraph.errors import GraphInterrupt
 
+from steambot.api.auth import Principal, require_user
 from steambot.api.main import get_graph, get_http_client
 from steambot.db.models import Pick, User
 from steambot.db.session import get_session_factory
@@ -35,7 +36,6 @@ router = APIRouter()
 class StartRunRequest(BaseModel):
     sport: str = "americanfootball_nfl"
     target_date: str = ""  # defaults to today
-    user_id: str = "demo"
 
 
 class StartRunResponse(BaseModel):
@@ -54,7 +54,6 @@ class RunStatusResponse(BaseModel):
 
 class ApprovePicksRequest(BaseModel):
     approved_pick_ids: list[str]
-    user_id: str = "demo"
 
 
 class PickRecord(BaseModel):
@@ -100,14 +99,14 @@ async def health():
 
 
 @router.post("/api/runs", response_model=StartRunResponse)
-async def start_run(req: StartRunRequest):
+async def start_run(req: StartRunRequest, user: Principal = Depends(require_user)):
     run_id = str(uuid.uuid4())
     target_date = req.target_date or date.today().isoformat()
 
     initial: SteamBotState = {
         "sport": req.sport,
         "target_date": target_date,
-        "user_id": req.user_id,
+        "user_id": user.user_id,
         "games": [],
         "fair_lines": [],
         "candidates": [],
@@ -117,14 +116,14 @@ async def start_run(req: StartRunRequest):
         "error": None,
     }
 
-    _runs[run_id] = {"status": "running", "state": initial, "owner": req.user_id}
+    _runs[run_id] = {"status": "running", "state": initial, "owner": user.user_id}
     graph = get_graph()
     config = {
         "configurable": {"thread_id": run_id},
         "run_name": f"picks/{req.sport}/{target_date}",
         "metadata": {
             "run_id": run_id,
-            "user_id": req.user_id,
+            "user_id": user.user_id,
             "sport": req.sport,
             "target_date": target_date,
         },
@@ -157,11 +156,10 @@ async def start_run(req: StartRunRequest):
 
 
 @router.get("/api/runs/{run_id}", response_model=RunStatusResponse)
-async def get_run(run_id: str, user_id: str = "demo"):
+async def get_run(run_id: str, user: Principal = Depends(require_user)):
     run = _runs.get(run_id)
-    # Return 404 for both missing and non-owned runs so a caller cannot probe run_ids
-    # they do not own. user_id is client-supplied today; production needs a real principal.
-    if not run or run.get("owner") != user_id:
+    # 404 for both missing and non-owned runs so a caller cannot probe run_ids they do not own
+    if not run or run.get("owner") != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
     graph = get_graph()
     config = {"configurable": {"thread_id": run_id}}
@@ -187,9 +185,9 @@ async def get_run(run_id: str, user_id: str = "demo"):
 
 
 @router.post("/api/runs/{run_id}/approve", response_model=RunStatusResponse)
-async def approve_picks(run_id: str, req: ApprovePicksRequest):
+async def approve_picks(run_id: str, req: ApprovePicksRequest, user: Principal = Depends(require_user)):
     run = _runs.get(run_id)
-    if not run or run.get("owner") != req.user_id:
+    if not run or run.get("owner") != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
     if run["status"] != "awaiting_review":
         raise HTTPException(status_code=409, detail=f"Run is {run['status']}, not awaiting_review")
@@ -200,7 +198,7 @@ async def approve_picks(run_id: str, req: ApprovePicksRequest):
         "run_name": f"approve/{run_id[:8]}",
         "metadata": {
             "run_id": run_id,
-            "user_id": req.user_id,
+            "user_id": user.user_id,
             "approved_count": len(req.approved_pick_ids),
         },
     }
@@ -224,12 +222,8 @@ async def approve_picks(run_id: str, req: ApprovePicksRequest):
 
 
 @router.get("/api/picks", response_model=list[PickRecord])
-async def list_picks(user_id: str, limit: int = Query(50, ge=1, le=200)):
-    """Return approved picks for a user, ordered by approval time, newest first.
-
-    user_id is caller-supplied with no JWT verification (same as all run
-    endpoints). Adding auth is the first production-readiness gap; see
-    Known Limitations in README.
+async def list_picks(user: Principal = Depends(require_user), limit: int = Query(50, ge=1, le=200)):
+    """Return the caller's approved picks, ordered by approval time, newest first.
 
     Includes CLV columns once settlement has populated them. Useful for
     verifying long-run edge: SELECT AVG(clv) WHERE result IS NOT NULL.
@@ -242,7 +236,7 @@ async def list_picks(user_id: str, limit: int = Query(50, ge=1, le=200)):
     async with factory() as session:
         q = (
             select(Pick)
-            .where(Pick.user_id == user_id)
+            .where(Pick.user_id == user.user_id)
             .order_by(desc(Pick.approved_at))
             .limit(limit)
         )

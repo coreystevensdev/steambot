@@ -17,6 +17,8 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    # SHA-256 of the sb_ API key; the plaintext is shown once at issue and never stored
+    api_key_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(255))
     is_pro: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

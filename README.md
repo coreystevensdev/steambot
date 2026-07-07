@@ -1,7 +1,7 @@
 # SteamBot
 
 [![CI](https://github.com/coreystevensdev/steambot/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/steambot/actions)
-[![66 tests](https://img.shields.io/badge/tests-66-brightgreen)](https://github.com/coreystevensdev/steambot/actions)
+[![72 tests](https://img.shields.io/badge/tests-72-brightgreen)](https://github.com/coreystevensdev/steambot/actions)
 [![18-case eval](https://img.shields.io/badge/eval-18%20cases-blue)](eval/dataset.jsonl)
 
 Agentic NFL betting research service that finds closing line value before the market closes. Pulls Pinnacle sharp-book lines via The Odds API, strips vig to no-vig fair probabilities, then uses Claude to surface picks where retail prices measurably beat the sharp-market consensus. LangGraph HITL checkpoint requires user approval before any bet slip is prepared.
@@ -50,6 +50,7 @@ flowchart TD
 | Odds data | The Odds API v4 | Single endpoint returns Pinnacle + 40 retail books in one call; 500 free req/month is enough for a daily picks run |
 | Sharp-line math | `american_to_prob` + `remove_vig` | Converting American odds to implied probability then normalizing removes the bookmaker overround in O(n) |
 | API | FastAPI | Async lifespan manages shared httpx client and graph instance |
+| Auth | Bearer API keys, SHA-256 at rest | Identity derives from the key server-side, so ownership checks compare against a real principal instead of a caller-supplied user_id; no external auth dependency |
 | Database | PostgreSQL + SQLAlchemy | Pick history and CLV tracking; `PostgresSaver` for LangGraph checkpoints |
 | Payments | Stripe webhooks | Subscription lifecycle via `customer.subscription.created/deleted` events |
 | Testing | pytest + respx | respx mocks at the httpx transport layer; no network calls in CI |
@@ -103,20 +104,30 @@ API is available at `http://localhost:8000`. The `/health` endpoint confirms the
 
 Without `DATABASE_URL` the service still runs picks end to end but skips persistence, logging a warning at boot. Set `STEAMBOT_ENV=production` to turn that fallback into a boot failure; a deployment that silently drops pick history has no CLV record.
 
+**Create a user and API key:**
+
+```bash
+python -m steambot create-user --email you@example.com
+```
+
+The key is printed once; only its SHA-256 hash is stored. Identity comes from the key on every request, so there is no user_id field anywhere in the API. Without `DATABASE_URL` (local demo), requests run as a fixed `demo` principal and no key is needed.
+
 **Start a picks run:**
 
 ```bash
 curl -s -X POST http://localhost:8000/api/runs \
+  -H "Authorization: Bearer $STEAMBOT_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"sport": "americanfootball_nfl", "user_id": "demo"}' | jq
+  -d '{"sport": "americanfootball_nfl"}' | jq
 ```
 
 **Approve candidates:**
 
 ```bash
 curl -s -X POST http://localhost:8000/api/runs/{run_id}/approve \
+  -H "Authorization: Bearer $STEAMBOT_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"approved_pick_ids": ["pick-uuid-1", "pick-uuid-2"], "user_id": "demo"}' | jq
+  -d '{"approved_pick_ids": ["pick-uuid-1", "pick-uuid-2"]}' | jq
 ```
 
 ### Tracing
@@ -182,5 +193,5 @@ python -m eval --out eval/report.json
 3. **Closing line is a near-kickoff snapshot, not the true close.** The free Odds API tier has no historical endpoint, so `python -m steambot settle` records whatever Pinnacle shows when it runs. If the job does not run inside its window before kickoff, `clv` stays `null` for those picks; there is no backfill. Line movement in the final seconds before kickoff is also invisible to a snapshot taken minutes earlier.
 4. **The clv number ignores point drift.** A spread bet at -3.5 that closes at -4.0 is compared by price only. The closing line is stored in `closing_point`, so the drift is queryable (`SELECT selection, closing_point FROM picks`), but it is not folded into the single `clv` float; converting a half point of NFL spread movement to probability requires a push-chart model that is out of scope.
 5. **Grading has a 3-day window.** The scores endpoint reaches back at most 3 days. A pick whose game finished more than 3 days before `steambot grade` runs stays ungraded permanently; run it at least twice a week during the season.
-6. **No authentication.** The `user_id` field is caller-supplied with no JWT verification. Adding auth is the first production-readiness gap.
+6. **API keys are minimal.** One key per user, no scopes, no expiry, rotation only via `create-user` re-run. Lookups compare SHA-256 hashes through a unique index; there is no per-key rate limiting, so a leaked key is fully capable until rotated.
 7. **MemorySaver in tests.** The graph uses `MemorySaver` (in-process) for local dev. Production requires `PostgresSaver` for checkpoints to survive restarts; the switchover is a one-line change in `graph.py`.
