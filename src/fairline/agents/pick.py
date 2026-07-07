@@ -117,10 +117,20 @@ def _compute_ev(blended_prob: float, american_price: int) -> float:
     return blended_prob * win_amount - (1 - blended_prob) * 1.0
 
 
-def _build_prompt(games: list[GameSnapshot], fair_lines: list[FairLine]) -> str:
+def _format_trends(team_trends: dict, team: str) -> str:
+    t = team_trends.get(team)
+    if not t:
+        return ""
+    return f"{team}: {t['su']} SU, {t['ats']} ATS, {t['ou']} O/U (last {t['n']})"
+
+
+def _build_prompt(
+    games: list[GameSnapshot], fair_lines: list[FairLine], team_trends: dict | None = None
+) -> str:
     lines_by_game: dict[str, list[FairLine]] = {}
     for fl in fair_lines:
         lines_by_game.setdefault(fl.game_id, []).append(fl)
+    team_trends = team_trends or {}
 
     sections = []
     for game in games:
@@ -131,10 +141,16 @@ def _build_prompt(games: list[GameSnapshot], fair_lines: list[FairLine]) -> str:
             f"  {fl.market}: {', '.join(f'{o}={p:.1%}' for o, p in zip(fl.outcomes, fl.fair_probs))} (source: {fl.source_book})"
             for fl in fl_list
         )
+        trend_lines = [
+            _format_trends(team_trends, t)
+            for t in (game.home_team, game.away_team)
+            if _format_trends(team_trends, t)
+        ]
+        trend_text = ("\n  Recent form: " + "; ".join(trend_lines)) if trend_lines else ""
         sections.append(
             f"GAME: {game.away_team} @ {game.home_team} -- {game.commence_time.strftime('%a %b %d %I:%M %p UTC')}\n"
             f"  game_id: {game.game_id}\n"
-            f"  Fair probabilities (no-vig):\n{fl_text}"
+            f"  Fair probabilities (no-vig):\n{fl_text}{trend_text}"
         )
 
     return (
@@ -161,7 +177,7 @@ async def pick_agent(state: FairlineState) -> dict:
         return {"candidates": [], "error": None}
 
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-    prompt = _build_prompt(games, fair_lines)
+    prompt = _build_prompt(games, fair_lines, state.get("team_trends"))
 
     resp = client.messages.create(
         model=os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6"),

@@ -89,3 +89,24 @@ class LineSnapshot(Base):
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     point: Mapped[float | None] = mapped_column(Float)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class GameResult(Base):
+    """One completed game with its closing line, for trend records.
+
+    Covers every game seen by the watcher and scores feed, not just picked
+    ones; ATS and O/U records need the full schedule.
+    """
+
+    __tablename__ = "game_results"
+
+    game_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    sport: Mapped[str] = mapped_column(String(50), nullable=False)
+    home_team: Mapped[str] = mapped_column(String(100), nullable=False)
+    away_team: Mapped[str] = mapped_column(String(100), nullable=False)
+    commence_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    home_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    away_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    # home team's closing handicap (-3.5 = home favored); NULL when no snapshot exists
+    closing_spread_home: Mapped[float | None] = mapped_column(Float)
+    closing_total: Mapped[float | None] = mapped_column(Float)

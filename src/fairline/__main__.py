@@ -85,15 +85,46 @@ async def _grade(days_from: int, sport: str) -> None:
     from fairline.clv import grade_results
     from fairline.db.session import get_session_factory
 
+    from fairline.trends import record_game_results
+
+    factory = get_session_factory()
     sports = SPORT_CHOICES if sport == "all" else [sport]
     scores = []
+    results_recorded = 0
     async with httpx.AsyncClient() as client:
         for s in sports:
-            scores.extend(await fetch_scores(client, s, days_from=days_from))
-    summary = await grade_results(scores, get_session_factory())
+            league_scores = await fetch_scores(client, s, days_from=days_from)
+            scores.extend(league_scores)
+            results_recorded += await record_game_results(league_scores, factory, sport=s)
+    summary = await grade_results(scores, factory)
     print(
-        f"graded={summary['graded']} pending={summary['pending']} missed={summary['missed']}"
+        f"graded={summary['graded']} pending={summary['pending']} "
+        f"missed={summary['missed']} results_recorded={results_recorded}"
     )
+
+
+async def _trends(team: str, last_n: int) -> None:
+    from sqlalchemy import or_, select
+
+    from fairline.db.models import GameResult
+    from fairline.db.session import get_session_factory
+    from fairline.trends import compute_team_trends
+
+    factory = get_session_factory()
+    async with factory() as session:
+        results = (
+            (
+                await session.execute(
+                    select(GameResult).where(
+                        or_(GameResult.home_team == team, GameResult.away_team == team)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    t = compute_team_trends(results, team, last_n=last_n)
+    print(f"{team}: {t['su']} SU, {t['ats']} ATS, {t['ou']} O/U (last {t['n']})")
 
 
 async def _agents() -> None:
@@ -188,6 +219,9 @@ def main() -> None:
     )
     _add_sport_arg(watch)
     sub.add_parser("agents", help="per-agent leaderboard: record, avg CLV, units")
+    trends = sub.add_parser("trends", help="SU/ATS/O-U record for a team from stored results")
+    trends.add_argument("--team", required=True)
+    trends.add_argument("--last", type=int, default=10, help="window size in games (default 10)")
     sim_report = sub.add_parser(
         "sim-report", help="compare CLV on picks where the sim agreed vs disagreed with the market"
     )
@@ -208,6 +242,8 @@ def main() -> None:
         asyncio.run(_sim_report(args.threshold))
     elif args.command == "agents":
         asyncio.run(_agents())
+    elif args.command == "trends":
+        asyncio.run(_trends(args.team, args.last))
     elif args.command == "watch":
         asyncio.run(_watch(args.interval_seconds, args.window_hours, args.once, args.sport))
 

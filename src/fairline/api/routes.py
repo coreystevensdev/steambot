@@ -121,6 +121,7 @@ async def start_run(req: StartRunRequest, user: Principal = Depends(require_user
         "target_date": target_date,
         "user_id": user.user_id,
         "sim_lines": req.sims,
+        "team_trends": {},
         "games": [],
         "fair_lines": [],
         "candidates": [],
@@ -258,6 +259,40 @@ async def list_picks(user: Principal = Depends(require_user), limit: int = Query
         picks = result.scalars().all()
 
     return [PickRecord.model_validate(p) for p in picks]
+
+
+@router.get("/api/trends")
+async def team_trends(
+    team: str,
+    last_n: int = Query(10, ge=1, le=50),
+    user: Principal = Depends(require_user),
+):
+    """SU, ATS, and O/U records for one team from stored game results."""
+    from sqlalchemy import or_
+
+    from fairline.db.models import GameResult
+    from fairline.trends import compute_team_trends
+
+    try:
+        factory = get_session_factory()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    async with factory() as session:
+        results = (
+            (
+                await session.execute(
+                    select(GameResult).where(
+                        or_(GameResult.home_team == team, GameResult.away_team == team)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    if not results:
+        raise HTTPException(status_code=404, detail=f"no recorded games for {team!r}")
+    return {"team": team, **compute_team_trends(results, team, last_n=last_n)}
 
 
 @router.post("/api/stripe/webhook", status_code=200)

@@ -179,6 +179,14 @@ def _parse_score(raw: dict) -> GameScore | None:
         logger.warning("odds_api: skipping score with missing fields: id=%r", raw.get("id"))
         return None
 
+    commence_time = None
+    raw_commence = raw.get("commence_time")
+    if raw_commence:
+        try:
+            commence_time = datetime.fromisoformat(raw_commence.rstrip("Z"))
+        except (ValueError, AttributeError):
+            commence_time = None
+
     home_score = away_score = None
     for entry in raw.get("scores") or []:
         try:
@@ -193,6 +201,7 @@ def _parse_score(raw: dict) -> GameScore | None:
     return GameScore(
         game_id=game_id,
         completed=bool(raw.get("completed")),
+        commence_time=commence_time,
         home_team=home_team,
         away_team=away_team,
         home_score=home_score,

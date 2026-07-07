@@ -1,7 +1,7 @@
 # Fairline
 
 [![CI](https://github.com/coreystevensdev/fairline/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/fairline/actions)
-[![99 tests](https://img.shields.io/badge/tests-99-brightgreen)](https://github.com/coreystevensdev/fairline/actions)
+[![109 tests](https://img.shields.io/badge/tests-109-brightgreen)](https://github.com/coreystevensdev/fairline/actions)
 [![18-case eval](https://img.shields.io/badge/eval-18%20cases-blue)](eval/dataset.jsonl)
 
 Agentic betting research service for NFL, NBA, MLB, and NHL that finds closing line value before the market closes. Pulls Pinnacle sharp-book lines via The Odds API, strips vig to no-vig fair probabilities, then uses Claude to surface picks where retail prices measurably beat the sharp-market consensus. LangGraph HITL checkpoint requires user approval before any bet slip is prepared. Every pick carries its producing agent as a byline, and each agent's record is graded by CLV, a harder standard than win rate.
@@ -89,6 +89,20 @@ SELECT COUNT(*), AVG(clv), SUM(profit_units) FROM picks WHERE result IS NOT NULL
 ```
 
 Positive average CLV with a losing `profit_units` over a small sample means variance; negative CLV with a winning record means luck that will not hold.
+
+### Trends
+
+ATS and over/under records come from Fairline's own data, no stats provider: the watcher's last pre-kickoff snapshot is each game's closing line, and grading already fetches final scores. `fairline grade` joins the two into `game_results`, and a `trends_agent` node attaches each team's recent records to the pick prompt, so the pick agent cites real form instead of guessing at it.
+
+```bash
+python -m fairline trends --team "Kansas City Chiefs" --last 10
+```
+
+```
+Kansas City Chiefs: 7-3-0 SU, 6-3-1 ATS, 4-5-1 O/U (last 10)
+```
+
+Also served at `GET /api/trends?team=...&last_n=10`. Coverage grows with collection: games the watcher never saw count toward straight-up records only, since their closing lines were never captured.
 
 ### Agent records
 

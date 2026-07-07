@@ -44,6 +44,7 @@ class GameScore(BaseModel):
     """Final or in-progress score from the Odds API scores endpoint."""
     game_id: str
     completed: bool
+    commence_time: datetime | None = None
     home_team: str
     away_team: str
     home_score: int | None = None
@@ -144,6 +145,9 @@ class FairlineState(TypedDict):
     # OddsAgent output
     games: list[GameSnapshot]
     fair_lines: list[FairLine]
+
+    # TrendsAgent output: team -> {"su", "ats", "ou", "n"} records
+    team_trends: dict
 
     # PickAgent output
     candidates: list[PickCandidate]
