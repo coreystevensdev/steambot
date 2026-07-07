@@ -233,6 +233,36 @@ pytest -q
 
 ---
 
+## Running a season
+
+The track record only accumulates while the jobs run. Everything is a CLI subcommand designed for cron: `watch` exits when no games are near, `settle` and `grade` are idempotent, and `backfill-nfl` merges by game id. One-time setup, then the crontab below:
+
+```bash
+python -m fairline backfill-nfl --seasons 2023 2024 2025
+```
+
+```cron
+# All times UTC. DATABASE_URL, ODDS_API_KEY, FAIRLINE_WEBHOOK_URL in the cron environment.
+
+# Line snapshots + steam alerts, every 10 min through US game hours (noon to midnight ET)
+*/10 16-23,0-4 * * *  python -m fairline watch --once --sport all
+
+# Closing-line capture, every 30 min in the same window
+0,30 16-23,0-4 * * *  python -m fairline settle --sport all
+
+# Grade results and record game outcomes, twice daily (scores feed reaches 3 days back)
+0 10,15 * * *         python -m fairline grade --sport all
+
+# Refresh NFL results and closing lines from nflverse, Tuesdays
+0 12 * * 2            python -m fairline backfill-nfl --seasons 2025
+```
+
+Quota math at this cadence, since every poll costs one request per league: watch runs 78 cycles a day at 4 requests each (about 9,400/month), settle adds about 3,100/month, grade about 250/month. Roughly 12,700 requests/month total, which fits The Odds API's 20K paid tier (about $30/month) with headroom and does not fit the free tier. A free-tier plan exists but is NFL-only and manual: `grade` daily and `settle` around Sunday, Monday, and Thursday kickoffs, no `watch`, about 250 requests/month.
+
+Picks runs stay human-triggered by design: cron can start a run (`POST /api/runs`), but candidates wait at the HITL checkpoint until someone approves them, so scheduling run creation only makes sense if the reviewer shows up.
+
+---
+
 ## Eval harness
 
 `eval/dataset.jsonl` contains 18 golden test cases that verify the deterministic math layer independently of the LLM. Run without API keys:
