@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Fairline: review queue{% endblock %}
+{% block content %}
+<h1>Review queue</h1>
+<p class="subhead">Deterministic candidates awaiting a human. Approving needs your API key (top right); the pick then enters settlement and grading under its agent's record.</p>
+{% if candidates %}
+<table>
+  <thead>
+    <tr><th>Agent</th><th>Game</th><th>Selection</th><th>Book</th><th class="num">Price</th><th class="num">Edge</th><th>Why</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for c in candidates %}
+    <tr>
+      <td><span class="chip {{ c.source }}">{{ c.source }}</span></td>
+      <td>{{ c.away_team }} @ {{ c.home_team }}</td>
+      <td>{{ c.selection }}</td>
+      <td>{{ c.book }}</td>
+      <td class="num">{{ "%+d"|format(c.price) }}</td>
+      <td class="num pos">{{ "%+.3f"|format(c.edge_pct) }}</td>
+      <td class="rationale" title="{{ c.rationale }}">{{ c.rationale }}</td>
+      <td>
+        <button class="act" hx-post="/api/steam/{{ c.id }}/approve"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful) this.closest('tr').remove()">approve</button>
+        <button class="act quiet" hx-post="/api/steam/{{ c.id }}/reject"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful) this.closest('tr').remove()">pass</button>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">Nothing pending. Candidates arrive when the watcher flags steam or the matchup scan finds a lagging prop price.</div>
+{% endif %}
+{% endblock %}

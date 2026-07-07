@@ -1,7 +1,7 @@
 # Fairline
 
 [![CI](https://github.com/coreystevensdev/fairline/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/fairline/actions)
-[![170 tests](https://img.shields.io/badge/tests-170-brightgreen)](https://github.com/coreystevensdev/fairline/actions)
+[![174 tests](https://img.shields.io/badge/tests-174-brightgreen)](https://github.com/coreystevensdev/fairline/actions)
 [![18-case eval](https://img.shields.io/badge/eval-18%20cases-blue)](eval/dataset.jsonl)
 
 Agentic betting research service for NFL, NBA, MLB, and NHL that finds closing line value before the market closes. Pulls Pinnacle sharp-book lines via The Odds API, strips vig to no-vig fair probabilities, then uses Claude to surface picks where retail prices measurably beat the sharp-market consensus. LangGraph HITL checkpoint requires user approval before any bet slip is prepared. Every pick carries its producing agent as a byline, and each agent's record is graded by CLV, a harder standard than win rate.
@@ -279,6 +279,16 @@ pytest -q
 ```
 
 ---
+
+## The dashboard
+
+Three server-rendered pages, styled as a ledger: dark ink canvas, every figure in tabular monospace, no gradients, no framework (Jinja2 plus htmx over the existing FastAPI).
+
+- `/` is the agent leaderboard: each agent's record, average CLV, and units. The front page is the audit, not a pitch.
+- `/queue` is the review desk: pending steam and matchup candidates with their edge math and rationale, approve or pass inline (approvals send your API key from the header field).
+- `/record` is every settled pick with result, CLV, and units, plus the running totals. Nothing on it can be edited or backfilled.
+
+Read pages are public by design: a graded record behind a login is marketing, in the open it is evidence. Mutations still require a bearer key.
 
 ## Running a season
 

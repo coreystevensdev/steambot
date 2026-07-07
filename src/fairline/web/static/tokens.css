@@ -1,0 +1,44 @@
+/* Fairline design tokens: the single source of truth. No screen redefines these.
+   Anchor: The Ledger. Near-black ink canvas, tabular-mono figures, restraint.
+
+   Accent contract:
+   --accent is INTERACTIVE ONLY: links, buttons, focus rings, active nav.
+   It never encodes meaning. Results and CLV signs use the semantic tokens,
+   which never appear on interactive elements.
+
+   Source-chip sub-palette: allowed only on agent/source chips (leaderboard,
+   queue, record tables). Banned everywhere else, including buttons and text. */
+
+:root {
+  --ink-canvas: #0e1116;
+  --ink-surface: #151a21;
+  --ink-raised: #1b222b;
+  --hairline: #232b36;
+
+  --text: #e8e4da;
+  --text-muted: #8a94a3;
+  --text-faint: #5c6673;
+
+  --accent: #8b7cf6;
+  --accent-soft: rgba(139, 124, 246, 0.14);
+
+  --result-win: #3fb27f;
+  --result-loss: #e0596b;
+  --result-push: #8a94a3;
+
+  --chip-model: #7d8893;
+  --chip-steam: #d98e32;
+  --chip-matchup: #5fa8d3;
+
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.75rem;
+  --space-5: 3rem;
+
+  --radius: 4px;
+  --ease: 120ms ease-out;
+}

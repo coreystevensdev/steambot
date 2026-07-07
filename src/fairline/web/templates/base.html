@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Fairline{% endblock %}</title>
+  <link rel="stylesheet" href="/static/tokens.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+</head>
+<body>
+  <header class="site">
+    <a class="wordmark" href="/">FAIRLINE</a>
+    <nav>
+      <a href="/" class="{{ 'active' if page == 'agents' else '' }}">Agents</a>
+      <a href="/queue" class="{{ 'active' if page == 'queue' else '' }}">Queue</a>
+      <a href="/record" class="{{ 'active' if page == 'record' else '' }}">Record</a>
+    </nav>
+    <input class="key-field" id="api-key" type="password" placeholder="API key (for approvals)"
+           autocomplete="off">
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <script>
+    const keyField = document.getElementById("api-key");
+    keyField.value = localStorage.getItem("fairline_key") || "";
+    keyField.addEventListener("change", () => localStorage.setItem("fairline_key", keyField.value));
+    document.body.addEventListener("htmx:configRequest", (e) => {
+      const key = localStorage.getItem("fairline_key");
+      if (key) e.detail.headers["Authorization"] = "Bearer " + key;
+    });
+  </script>
+</body>
+</html>

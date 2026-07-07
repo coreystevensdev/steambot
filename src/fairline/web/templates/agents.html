@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Fairline: agent records{% endblock %}
+{% block content %}
+<h1>Agent record</h1>
+<p class="subhead">Every pick carries its producing agent. Records are graded by closing line value, not win rate, and losing streaks are left in.</p>
+{% if report %}
+<table>
+  <thead>
+    <tr><th>Agent</th><th>Record</th><th class="num">Avg CLV</th><th class="num">Units</th><th class="num">Picks</th></tr>
+  </thead>
+  <tbody>
+    {% for source, s in report.items() %}
+    <tr>
+      <td><span class="chip {{ source }}">{{ source }}</span></td>
+      <td class="num">{{ s.record }}</td>
+      <td class="num {{ 'pos' if s.avg_clv > 0 else 'neg' if s.avg_clv < 0 else 'push' }}">{{ "%+.4f"|format(s.avg_clv) }}</td>
+      <td class="num {{ 'pos' if s.profit_units > 0 else 'neg' if s.profit_units < 0 else 'push' }}">{{ "%+.2f"|format(s.profit_units) }}</td>
+      <td class="num">{{ s.count }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">No settled picks yet. Records appear after the first grading run; nothing here is ever backfilled or curated.</div>
+{% endif %}
+{% endblock %}

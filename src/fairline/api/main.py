@@ -10,11 +10,11 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from fairline.graph import build_graph
 
@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 
 _http_client: httpx.AsyncClient | None = None
 _graph = None
-_templates: Jinja2Templates | None = None
 
 
 def resolve_session_factory():
@@ -70,6 +69,13 @@ def get_graph():
     return _graph
 
 
-from fairline.api import routes  # noqa: E402 -- import after app is defined
+app.mount(
+    "/static",
+    StaticFiles(directory=str(Path(__file__).resolve().parent.parent / "web" / "static")),
+    name="static",
+)
+
+from fairline.api import pages, routes  # noqa: E402 -- import after app is defined
 
 app.include_router(routes.router)
+app.include_router(pages.router)
