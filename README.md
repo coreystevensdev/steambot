@@ -1,7 +1,7 @@
 # SteamBot
 
 [![CI](https://github.com/coreystevensdev/steambot/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/steambot/actions)
-[![27 tests](https://img.shields.io/badge/tests-27-brightgreen)](https://github.com/coreystevensdev/steambot/actions)
+[![38 tests](https://img.shields.io/badge/tests-38-brightgreen)](https://github.com/coreystevensdev/steambot/actions)
 [![18-case eval](https://img.shields.io/badge/eval-18%20cases-blue)](eval/dataset.jsonl)
 
 Agentic NFL betting research service that finds closing line value before the market closes. Pulls Pinnacle sharp-book lines via The Odds API, strips vig to no-vig fair probabilities, then uses Claude to surface picks where retail prices measurably beat the sharp-market consensus. LangGraph HITL checkpoint requires user approval before any bet slip is prepared.
@@ -53,6 +53,7 @@ flowchart TD
 | Database | PostgreSQL + SQLAlchemy | Pick history and CLV tracking; `PostgresSaver` for LangGraph checkpoints |
 | Payments | Stripe webhooks | Subscription lifecycle via `customer.subscription.created/deleted` events |
 | Testing | pytest + respx | respx mocks at the httpx transport layer; no network calls in CI |
+| Observability | LangSmith | Traces each graph run at node level; HITL pause and resume appear as two linked traces (`picks/...` then `approve/...`), making the two-phase architecture visible without reading code |
 
 ---
 
@@ -93,6 +94,23 @@ curl -s -X POST http://localhost:8000/api/runs/{run_id}/approve \
   -H "Content-Type: application/json" \
   -d '{"approved_pick_ids": ["pick-uuid-1", "pick-uuid-2"], "user_id": "demo"}' | jq
 ```
+
+### Tracing
+
+Add your LangSmith key to `.env` to enable run tracing:
+
+```bash
+LANGCHAIN_API_KEY=lsv2_pt_...
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_PROJECT=steambot
+```
+
+Each picks run produces two traces in the LangSmith UI:
+
+- `picks/americanfootball_nfl/2026-01-15` -- covers odds fetch, fair-line derivation, Claude pick generation, and the HITL pause
+- `approve/<run_id>` -- covers the resume and pick persistence
+
+Tracing is optional. The service starts and runs normally without `LANGCHAIN_API_KEY` set.
 
 **Run tests (no API keys needed):**
 
