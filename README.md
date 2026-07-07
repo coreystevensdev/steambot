@@ -1,7 +1,7 @@
 # SteamBot
 
 [![CI](https://github.com/coreystevensdev/steambot/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/steambot/actions)
-[![80 tests](https://img.shields.io/badge/tests-80-brightgreen)](https://github.com/coreystevensdev/steambot/actions)
+[![83 tests](https://img.shields.io/badge/tests-83-brightgreen)](https://github.com/coreystevensdev/steambot/actions)
 [![18-case eval](https://img.shields.io/badge/eval-18%20cases-blue)](eval/dataset.jsonl)
 
 Agentic NFL betting research service that finds closing line value before the market closes. Pulls Pinnacle sharp-book lines via The Odds API, strips vig to no-vig fair probabilities, then uses Claude to surface picks where retail prices measurably beat the sharp-market consensus. LangGraph HITL checkpoint requires user approval before any bet slip is prepared.
@@ -113,6 +113,16 @@ python -m steambot sim-report
 ```
 
 This splits settled picks into sim-agreed and sim-disagreed against the sharp line and compares average CLV. The disagreed bucket is the only place a sim can prove it carries information the market lacks. If that bucket's CLV is not positive over a real sample, the sim is adding confidence, not information, and its weight should go down, not up.
+
+### Line history
+
+Steam detection (spotting sharp, fast Pinnacle moves and betting retail books that lag them) needs line history a single odds fetch cannot provide. The collector:
+
+```bash
+python -m steambot watch --interval-seconds 120 --window-hours 3
+```
+
+Each cycle stores Pinnacle and retail prices for games kicking off within the window into `line_snapshots`, then exits once no games are near. Use `--once` under cron. Every poll costs one Odds API request; a 2-minute interval through NFL game-day windows will exceed the free tier's 500 requests/month, so sustained collection needs the paid tier or wider intervals. Detection over these rows is not built yet; this is the raw material.
 
 ---
 

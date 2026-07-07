@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -59,3 +59,25 @@ class Pick(Base):
     clv: Mapped[float | None] = mapped_column(Float)
     result: Mapped[str | None] = mapped_column(String(10))  # "win" | "loss" | "push"
     profit_units: Mapped[float | None] = mapped_column(Float)
+
+
+class LineSnapshot(Base):
+    """One book's price for one side of a market at one moment.
+
+    The raw material for steam detection: comparing a book's rows across
+    captured_at reveals line movement the single-shot odds fetch cannot see.
+    """
+
+    __tablename__ = "line_snapshots"
+    __table_args__ = (
+        Index("ix_line_snapshots_lookup", "game_id", "market", "book", "captured_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    book: Mapped[str] = mapped_column(String(100), nullable=False)
+    market: Mapped[str] = mapped_column(String(50), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(255), nullable=False)
+    price: Mapped[int] = mapped_column(Integer, nullable=False)
+    point: Mapped[float | None] = mapped_column(Float)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

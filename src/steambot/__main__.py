@@ -24,6 +24,29 @@ async def _settle(window_minutes: int) -> None:
     )
 
 
+async def _watch(interval_seconds: int, window_hours: float, once: bool) -> None:
+    from datetime import datetime, timezone
+
+    from steambot.clients.odds_api import fetch_nfl_odds
+    from steambot.db.session import get_session_factory
+    from steambot.steam import games_in_window, record_snapshots
+
+    factory = get_session_factory()
+    async with httpx.AsyncClient() as client:
+        while True:
+            now = datetime.now(timezone.utc)
+            games = await fetch_nfl_odds(client)
+            upcoming = games_in_window(games, now=now, window_hours=window_hours)
+            if not upcoming:
+                print(f"no games within {window_hours}h; exiting")
+                return
+            written = await record_snapshots(upcoming, factory, captured_at=now)
+            print(f"{now.isoformat(timespec='seconds')} games={len(upcoming)} rows={written}")
+            if once:
+                return
+            await asyncio.sleep(interval_seconds)
+
+
 async def _sim_report(threshold: float) -> None:
     from steambot.clv import sim_clv_report
     from steambot.db.session import get_session_factory
@@ -83,6 +106,24 @@ def main() -> None:
         "create-user", help="create a user (or rotate their key) and print the API key once"
     )
     create_user.add_argument("--email", required=True)
+    watch = sub.add_parser(
+        "watch", help="poll and store line snapshots for games near kickoff"
+    )
+    watch.add_argument(
+        "--interval-seconds",
+        type=int,
+        default=120,
+        help="seconds between polls; each poll costs one API request (default 120)",
+    )
+    watch.add_argument(
+        "--window-hours",
+        type=float,
+        default=3.0,
+        help="track games starting within this many hours (default 3)",
+    )
+    watch.add_argument(
+        "--once", action="store_true", help="poll a single cycle and exit (cron mode)"
+    )
     sim_report = sub.add_parser(
         "sim-report", help="compare CLV on picks where the sim agreed vs disagreed with the market"
     )
@@ -101,6 +142,8 @@ def main() -> None:
         asyncio.run(_create_user(args.email))
     elif args.command == "sim-report":
         asyncio.run(_sim_report(args.threshold))
+    elif args.command == "watch":
+        asyncio.run(_watch(args.interval_seconds, args.window_hours, args.once))
 
 
 if __name__ == "__main__":
