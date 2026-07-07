@@ -268,6 +268,82 @@ async def list_picks(user: Principal = Depends(require_user), limit: int = Query
     return [PickRecord.model_validate(p) for p in picks]
 
 
+class SteamCandidateRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    created_at: datetime
+    sport: str
+    game_id: str
+    home_team: str
+    away_team: str
+    commence_time: datetime | None = None
+    market: str
+    selection: str
+    book: str
+    price: int
+    sharp_probability: float
+    implied_probability: float
+    edge_pct: float
+    ev_pct: float
+    rationale: str
+    status: str
+
+
+@router.get("/api/steam", response_model=list[SteamCandidateRecord])
+async def list_steam_candidates(user: Principal = Depends(require_user)):
+    """Pending steam candidates awaiting review, newest first."""
+    from fairline.db.models import SteamCandidate
+
+    try:
+        factory = get_session_factory()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    async with factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(SteamCandidate)
+                    .where(SteamCandidate.status == "pending")
+                    .order_by(desc(SteamCandidate.created_at))
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return [SteamCandidateRecord.model_validate(c) for c in rows]
+
+
+@router.post("/api/steam/{candidate_id}/approve")
+async def approve_steam(candidate_id: str, user: Principal = Depends(require_user)):
+    from fairline.steam import approve_steam_candidate
+
+    try:
+        factory = get_session_factory()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    pick_id = await approve_steam_candidate(factory, candidate_id, user.user_id)
+    if pick_id is None:
+        raise HTTPException(status_code=404, detail="Candidate not found or already resolved")
+    return {"pick_id": pick_id, "status": "approved"}
+
+
+@router.post("/api/steam/{candidate_id}/reject")
+async def reject_steam(candidate_id: str, user: Principal = Depends(require_user)):
+    from fairline.steam import reject_steam_candidate
+
+    try:
+        factory = get_session_factory()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    if not await reject_steam_candidate(factory, candidate_id):
+        raise HTTPException(status_code=404, detail="Candidate not found or already resolved")
+    return {"status": "rejected"}
+
+
 @router.get("/api/trends")
 async def team_trends(
     team: str,

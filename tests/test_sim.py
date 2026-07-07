@@ -202,3 +202,100 @@ async def test_sim_agent_without_db_passes_caller_lines_through():
     )
     out = await sim_agent({"games": [], "sim_lines": [line]}, session_factory=None)
     assert out == {"sim_lines": [line]}
+
+
+class TestTotalsModel:
+    def _games(self):
+        # A: high-scoring both ways; B: low-scoring. League avg pts = (30+20+10+14) / 4 = 18.5
+        return [
+            {"season": 2025, "home_team": "A", "away_team": "B", "home_score": 30, "away_score": 10},
+            {"season": 2025, "home_team": "B", "away_team": "A", "home_score": 14, "away_score": 20},
+        ]
+
+    def test_scoring_rates_center_on_league_average(self):
+        from fairline.sim import build_scoring_rates
+
+        rates, league_avg = build_scoring_rates(self._games())
+
+        assert league_avg == pytest.approx(18.5)
+        # A scored 30 and 20 -> off dev +6.5; allowed 10 and 14 -> def dev -6.5
+        assert rates["A"]["off"] == pytest.approx(6.5)
+        assert rates["A"]["def"] == pytest.approx(-6.5)
+        assert rates["B"]["off"] == pytest.approx(-6.5)
+
+    def test_expected_total_sums_deviations(self):
+        from fairline.sim import build_scoring_rates, expected_total
+
+        rates, league_avg = build_scoring_rates(self._games())
+        # 2*18.5 + offA 6.5 + offB -6.5 + defA -6.5 + defB 6.5 = 37.0
+        assert expected_total(rates, league_avg, "A", "B") == pytest.approx(37.0)
+
+    def test_unknown_team_uses_league_average(self):
+        from fairline.sim import build_scoring_rates, expected_total
+
+        rates, league_avg = build_scoring_rates(self._games())
+        assert expected_total(rates, league_avg, "X", "Y") == pytest.approx(37.0)
+
+    def test_over_probability_pin(self):
+        from fairline.sim import over_probability
+
+        # expected 47, line 44.5, sigma 10 -> phi(0.25) = 0.5987
+        assert over_probability(47.0, 44.5) == pytest.approx(0.5987, abs=0.002)
+
+    def test_rates_use_latest_season_only(self):
+        from fairline.sim import build_scoring_rates
+
+        games = self._games() + [
+            {"season": 2024, "home_team": "A", "away_team": "B", "home_score": 60, "away_score": 60}
+        ]
+        rates, league_avg = build_scoring_rates(games)
+        assert league_avg == pytest.approx(18.5)
+
+
+async def test_sim_agent_emits_totals_line(session_factory):
+    async with session_factory() as session:
+        for i in range(1, 5):
+            session.add(
+                GameResult(
+                    game_id=f"t{i}",
+                    sport="americanfootball_nfl",
+                    home_team="Kansas City Chiefs",
+                    away_team="Denver Broncos",
+                    commence_time=NOW - timedelta(days=7 * i),
+                    home_score=30,
+                    away_score=20,
+                )
+            )
+        await session.commit()
+
+    game = GameSnapshot(
+        game_id="up-1",
+        sport="americanfootball_nfl",
+        home_team="Kansas City Chiefs",
+        away_team="Denver Broncos",
+        commence_time=NOW + timedelta(days=2),
+        bookmakers=[
+            BookmakerOdds(
+                key="pinnacle",
+                title="Pinnacle",
+                markets=[
+                    MarketOdds(
+                        key="totals",
+                        outcomes=[
+                            Outcome(name="Over", price=-110, point=44.5),
+                            Outcome(name="Under", price=-110, point=44.5),
+                        ],
+                    )
+                ],
+            )
+        ],
+    )
+    state = {"sport": "americanfootball_nfl", "games": [game], "sim_lines": []}
+
+    out = await sim_agent(state, session_factory=session_factory)
+
+    totals = [sl for sl in out["sim_lines"] if sl.market == "totals"]
+    assert len(totals) == 1
+    assert totals[0].selection == "Over 44.5"
+    # every game totals 50 against a 44.5 line; the model should lean over
+    assert totals[0].probability > 0.6

@@ -1,7 +1,7 @@
 # Fairline
 
 [![CI](https://github.com/coreystevensdev/fairline/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/fairline/actions)
-[![125 tests](https://img.shields.io/badge/tests-125-brightgreen)](https://github.com/coreystevensdev/fairline/actions)
+[![134 tests](https://img.shields.io/badge/tests-134-brightgreen)](https://github.com/coreystevensdev/fairline/actions)
 [![18-case eval](https://img.shields.io/badge/eval-18%20cases-blue)](eval/dataset.jsonl)
 
 Agentic betting research service for NFL, NBA, MLB, and NHL that finds closing line value before the market closes. Pulls Pinnacle sharp-book lines via The Odds API, strips vig to no-vig fair probabilities, then uses Claude to surface picks where retail prices measurably beat the sharp-market consensus. LangGraph HITL checkpoint requires user approval before any bet slip is prepared. Every pick carries its producing agent as a byline, and each agent's record is graded by CLV, a harder standard than win rate.
@@ -121,7 +121,7 @@ Win rate is noisy and gameable; average CLV is the grade that matters, and it is
 
 ### The simulation model
 
-For NFL, a `sim_agent` node computes its own probabilities before picks are generated: Elo-style points-scale team ratings fit from stored game results (home-field advantage 2.0, ratings regress a third toward zero between seasons), and a Normal margin model (sigma 13.5) that converts rating gaps into win and cover probabilities. All arithmetic is code over data; Claude is never asked to estimate a probability. Seed the ratings with history in one command:
+For NFL, a `sim_agent` node computes its own probabilities before picks are generated: Elo-style points-scale team ratings fit from stored game results (home-field advantage 2.0, ratings regress a third toward zero between seasons), a Normal margin model (sigma 13.5) for win and cover probabilities, and a totals model built from current-season team scoring rates (Normal, sigma 10) for over/under probabilities. All arithmetic is code over data; Claude is never asked to estimate a probability. Seed the ratings with history in one command:
 
 ```bash
 python -m fairline backfill-nfl --seasons 2023 2024 2025
@@ -165,7 +165,17 @@ Each cycle stores Pinnacle and retail prices for games kicking off within the wi
 STEAM Kansas City Chiefs (spreads) -110 -> -125 point -2.5 -> -3.0 KEY prob +0.021 in 6m via pinnacle
 ```
 
-Use `--once` under cron. Every poll costs one Odds API request; a 2-minute interval through NFL game-day windows will exceed the free tier's 500 requests/month, so sustained collection needs the paid tier or wider intervals. Turning steam events into auto-generated pick candidates (betting retail books that lag the move) is the next phase; today the alert is the product.
+Use `--once` under cron. Every poll costs one Odds API request per league; the quota math lives in Running a season.
+
+Steam events also become pick candidates: the watcher scans the same cycle's retail prices for books still at least 2 points of implied probability behind the new sharp number and queues them as pending candidates with the edge math attached. Review and approve:
+
+```
+GET  /api/steam                      pending candidates, newest first
+POST /api/steam/{id}/approve         becomes a Pick with source=steam
+POST /api/steam/{id}/reject
+```
+
+Approval is the same HITL principle as picks runs, just without the graph: no Claude call is needed when the rationale is "Pinnacle moved and DraftKings has not," so candidates go straight to a review queue, and an approved candidate enters the same settlement, grading, and leaderboard as every other pick.
 
 ---
 

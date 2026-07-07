@@ -82,6 +82,7 @@ class SteamEvent(NamedTuple):
     outcome: str
     book: str
     prob_move: float
+    new_prob: float
     old_price: int
     new_price: int
     old_point: float | None
@@ -156,6 +157,7 @@ def detect_steam(
                         outcome=new_row.outcome,
                         book=new_row.book,
                         prob_move=prob_move,
+                        new_prob=new_fair[new_row.outcome],
                         old_price=old_row.price,
                         new_price=new_row.price,
                         old_point=old_row.point,
@@ -231,3 +233,179 @@ def format_steam_event(e: SteamEvent) -> str:
         f"STEAM {e.outcome} ({e.market}) {e.old_price:+d} -> {e.new_price:+d}"
         f"{point_part} prob {e.prob_move:+.3f} in {e.elapsed_seconds / 60:.0f}m via {e.book}"
     )
+
+
+MIN_STEAM_EDGE = 0.02
+
+
+def _confidence(edge: float) -> str:
+    if edge > 0.05:
+        return "high"
+    if edge >= 0.03:
+        return "medium"
+    return "low"
+
+
+async def create_steam_candidates(
+    session_factory,
+    events: list[SteamEvent],
+    games: list[GameSnapshot],
+    min_edge: float = MIN_STEAM_EDGE,
+) -> int:
+    """Turn steam events into pending candidates at retail books that lag.
+
+    A book lags when its current implied probability sits at least min_edge
+    below the sharp book's new no-vig number. One pending candidate per
+    game/market/selection/book; re-detection of the same move is a no-op.
+    """
+    import uuid
+
+    from sqlalchemy import select as sa_select
+
+    from fairline.db.models import SteamCandidate
+
+    games_by_id = {g.game_id: g for g in games}
+    created = 0
+    async with session_factory() as session:
+        for event in events:
+            game = games_by_id.get(event.game_id)
+            if game is None:
+                continue
+            latest_stamp = (
+                await session.execute(
+                    sa_select(LineSnapshot.captured_at)
+                    .where(
+                        LineSnapshot.game_id == event.game_id,
+                        LineSnapshot.market == event.market,
+                        LineSnapshot.book.in_(RETAIL_BOOKS),
+                    )
+                    .order_by(LineSnapshot.captured_at.desc())
+                    .limit(1)
+                )
+            ).scalar()
+            if latest_stamp is None:
+                continue
+            retail_rows = (
+                (
+                    await session.execute(
+                        sa_select(LineSnapshot).where(
+                            LineSnapshot.game_id == event.game_id,
+                            LineSnapshot.market == event.market,
+                            LineSnapshot.outcome == event.outcome,
+                            LineSnapshot.book.in_(RETAIL_BOOKS),
+                            LineSnapshot.captured_at == latest_stamp,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in retail_rows:
+                implied = american_to_prob(row.price)
+                edge = event.new_prob - implied
+                if edge < min_edge:
+                    continue
+                selection = (
+                    f"{event.outcome} {row.point:+g}" if row.point is not None else event.outcome
+                )
+                already_pending = (
+                    await session.execute(
+                        sa_select(SteamCandidate.id).where(
+                            SteamCandidate.game_id == event.game_id,
+                            SteamCandidate.market == event.market,
+                            SteamCandidate.selection == selection,
+                            SteamCandidate.book == row.book,
+                            SteamCandidate.status == "pending",
+                        )
+                    )
+                ).scalar()
+                if already_pending:
+                    continue
+                win_amount = row.price / 100 if row.price > 0 else 100 / abs(row.price)
+                session.add(
+                    SteamCandidate(
+                        id=str(uuid.uuid4()),
+                        sport=game.sport,
+                        game_id=event.game_id,
+                        home_team=game.home_team,
+                        away_team=game.away_team,
+                        commence_time=game.commence_time,
+                        market=event.market,
+                        selection=selection,
+                        book=row.book,
+                        price=row.price,
+                        sharp_probability=event.new_prob,
+                        implied_probability=implied,
+                        edge_pct=edge,
+                        ev_pct=event.new_prob * win_amount - (1 - event.new_prob),
+                        rationale=f"{format_steam_event(event)}; {row.book} stale at {row.price:+d}",
+                        status="pending",
+                    )
+                )
+                created += 1
+        await session.commit()
+    if created:
+        logger.info("steam: %d candidates pending review", created)
+    return created
+
+
+async def approve_steam_candidate(session_factory, candidate_id: str, user_id: str) -> str | None:
+    """Turn a pending candidate into a Pick with source='steam'. None if gone."""
+    import uuid
+    from datetime import timezone as _tz
+
+    from sqlalchemy import select as sa_select
+
+    from fairline.db.models import Pick, SteamCandidate
+
+    async with session_factory() as session:
+        cand = (
+            await session.execute(sa_select(SteamCandidate).where(SteamCandidate.id == candidate_id))
+        ).scalar_one_or_none()
+        if cand is None or cand.status != "pending":
+            return None
+        pick_id = str(uuid.uuid4())
+        session.add(
+            Pick(
+                id=pick_id,
+                user_id=user_id,
+                run_id=f"steam:{cand.id[:8]}",
+                sport=cand.sport,
+                game_id=cand.game_id,
+                home_team=cand.home_team,
+                away_team=cand.away_team,
+                commence_time=cand.commence_time,
+                market=cand.market,
+                selection=cand.selection,
+                book=cand.book,
+                price=cand.price,
+                sharp_probability=cand.sharp_probability,
+                sim_probability=None,
+                blended_probability=cand.sharp_probability,
+                edge_pct=cand.edge_pct,
+                ev_pct=cand.ev_pct,
+                confidence=_confidence(cand.edge_pct),
+                rationale=cand.rationale,
+                source="steam",
+                approved_at=datetime.now(_tz.utc),
+            )
+        )
+        cand.status = "approved"
+        await session.commit()
+        return pick_id
+
+
+async def reject_steam_candidate(session_factory, candidate_id: str) -> bool:
+    from sqlalchemy import select as sa_select
+
+    from fairline.db.models import SteamCandidate
+
+    async with session_factory() as session:
+        cand = (
+            await session.execute(sa_select(SteamCandidate).where(SteamCandidate.id == candidate_id))
+        ).scalar_one_or_none()
+        if cand is None or cand.status != "pending":
+            return False
+        cand.status = "rejected"
+        await session.commit()
+        return True

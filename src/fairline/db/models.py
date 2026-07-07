@@ -127,3 +127,32 @@ class Run(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SteamCandidate(Base):
+    """A retail price lagging a detected sharp move, awaiting human approval.
+
+    Steam picks skip the LangGraph pipeline (no Claude call needed; the math
+    is deterministic) but not the human: approval turns a candidate into a
+    Pick with source="steam", entering the same settlement and grading.
+    """
+
+    __tablename__ = "steam_candidates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    sport: Mapped[str] = mapped_column(String(50), nullable=False)
+    game_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    home_team: Mapped[str] = mapped_column(String(100), nullable=False)
+    away_team: Mapped[str] = mapped_column(String(100), nullable=False)
+    commence_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    market: Mapped[str] = mapped_column(String(50), nullable=False)
+    selection: Mapped[str] = mapped_column(String(255), nullable=False)
+    book: Mapped[str] = mapped_column(String(100), nullable=False)
+    price: Mapped[int] = mapped_column(Integer, nullable=False)
+    sharp_probability: Mapped[float] = mapped_column(Float, nullable=False)
+    implied_probability: Mapped[float] = mapped_column(Float, nullable=False)
+    edge_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    ev_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending", server_default="pending")

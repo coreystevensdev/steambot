@@ -27,6 +27,7 @@ NFLVERSE_GAMES_URL = "https://github.com/nflverse/nfldata/raw/master/data/games.
 
 HFA_POINTS = 2.0
 SIGMA_MARGIN = 13.5
+SIGMA_TOTAL = 10.0
 ELO_K = 0.06
 SEASON_CARRYOVER = 2 / 3  # regress a third of each rating away between seasons
 
@@ -59,6 +60,51 @@ def win_probability(expected_margin: float) -> float:
 def cover_probability(expected_margin: float, team_point: float) -> float:
     """P(margin + team_point > 0): the team covers its spread."""
     return _phi((expected_margin + team_point) / SIGMA_MARGIN)
+
+
+def over_probability(expected: float, line: float) -> float:
+    """P(total > line) under Normal(expected, SIGMA_TOTAL)."""
+    return _phi((expected - line) / SIGMA_TOTAL)
+
+
+def build_scoring_rates(games: list[dict]) -> tuple[dict, float]:
+    """Per-team offensive and defensive deviations from the league scoring average.
+
+    Only the latest season in the input counts: scoring environments and
+    rosters shift enough year to year that mixing seasons blurs more than it
+    smooths. Returns ({team: {"off": dev, "def": dev}}, league_avg_points).
+    """
+    latest = max((g["season"] for g in games), default=0)
+    season_games = [g for g in games if g["season"] == latest]
+    if not season_games:
+        return {}, 0.0
+
+    scored: dict[str, list[int]] = {}
+    allowed: dict[str, list[int]] = {}
+    all_points: list[int] = []
+    for g in season_games:
+        scored.setdefault(g["home_team"], []).append(g["home_score"])
+        allowed.setdefault(g["home_team"], []).append(g["away_score"])
+        scored.setdefault(g["away_team"], []).append(g["away_score"])
+        allowed.setdefault(g["away_team"], []).append(g["home_score"])
+        all_points.extend((g["home_score"], g["away_score"]))
+
+    league_avg = sum(all_points) / len(all_points)
+    rates = {
+        team: {
+            "off": sum(scored[team]) / len(scored[team]) - league_avg,
+            "def": sum(allowed[team]) / len(allowed[team]) - league_avg,
+        }
+        for team in scored
+    }
+    return rates, league_avg
+
+
+def expected_total(rates: dict, league_avg: float, home: str, away: str) -> float:
+    """Expected combined score; unknown teams contribute league-average zeros."""
+    zero = {"off": 0.0, "def": 0.0}
+    h, a = rates.get(home, zero), rates.get(away, zero)
+    return 2 * league_avg + h["off"] + a["off"] + h["def"] + a["def"]
 
 
 def season_of(when: datetime) -> int:
@@ -146,15 +192,15 @@ def parse_nflverse_games(csv_text: str) -> tuple[list[dict], list[GameResult]]:
     return sim_games, results
 
 
-def _spread_points(game: GameSnapshot) -> dict[str, float]:
-    """Sharp-book spread point per team name, if a spreads market exists."""
+def _market_points(game: GameSnapshot, market: str) -> dict[str, float]:
+    """Sharp-book point per outcome name for one market, if present."""
     from fairline.agents.odds import best_sharp_book
 
     book = best_sharp_book(game)
     if book is None:
         return {}
     bm = next((b for b in game.bookmakers if b.key == book), None)
-    mkt = next((m for m in bm.markets if m.key == "spreads"), None) if bm else None
+    mkt = next((m for m in bm.markets if m.key == market), None) if bm else None
     if mkt is None:
         return {}
     return {o.name: o.point for o in mkt.outcomes if o.point is not None}
@@ -189,18 +235,18 @@ async def sim_agent(state: FairlineState, session_factory=None) -> dict:
     if not rows:
         return {"sim_lines": caller_lines}
 
-    ratings = build_ratings(
-        [
-            {
-                "season": season_of(r.commence_time) if r.commence_time else 0,
-                "home_team": r.home_team,
-                "away_team": r.away_team,
-                "home_score": r.home_score,
-                "away_score": r.away_score,
-            }
-            for r in rows
-        ]
-    )
+    sim_input = [
+        {
+            "season": season_of(r.commence_time) if r.commence_time else 0,
+            "home_team": r.home_team,
+            "away_team": r.away_team,
+            "home_score": r.home_score,
+            "away_score": r.away_score,
+        }
+        for r in rows
+    ]
+    ratings = build_ratings(sim_input)
+    rates, league_avg = build_scoring_rates(sim_input)
 
     covered = {(sl.home_team, sl.away_team, sl.market) for sl in caller_lines}
     model_lines: list[SimLine] = []
@@ -218,7 +264,7 @@ async def sim_agent(state: FairlineState, session_factory=None) -> dict:
                     probability=win_probability(expected),
                 )
             )
-        points = _spread_points(game)
+        points = _market_points(game, "spreads")
         home_point = points.get(game.home_team)
         if home_point is not None and (game.home_team, game.away_team, "spreads") not in covered:
             model_lines.append(
@@ -228,6 +274,18 @@ async def sim_agent(state: FairlineState, session_factory=None) -> dict:
                     market="spreads",
                     selection=f"{game.home_team} {home_point:+g}",
                     probability=cover_probability(expected, home_point),
+                )
+            )
+        total_line = _market_points(game, "totals").get("Over")
+        if total_line is not None and (game.home_team, game.away_team, "totals") not in covered:
+            exp_total = expected_total(rates, league_avg, game.home_team, game.away_team)
+            model_lines.append(
+                SimLine(
+                    home_team=game.home_team,
+                    away_team=game.away_team,
+                    market="totals",
+                    selection=f"Over {total_line:g}",
+                    probability=over_probability(exp_total, total_line),
                 )
             )
 

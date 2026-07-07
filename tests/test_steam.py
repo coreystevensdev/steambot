@@ -218,3 +218,107 @@ def test_key_numbers_do_not_apply_outside_nfl():
             r.sport = "basketball_nba"
 
     assert detect_steam(old, new) == []
+
+
+def _upcoming_game():
+    return GameSnapshot(
+        game_id="game-1",
+        sport="americanfootball_nfl",
+        home_team="Kansas City Chiefs",
+        away_team="Las Vegas Raiders",
+        commence_time=NOW + timedelta(hours=1),
+        bookmakers=[],
+    )
+
+
+def _retail_row(book="draftkings", price=-108, point=-2.5, captured_at=None):
+    return LineSnapshot(
+        game_id="game-1",
+        sport="americanfootball_nfl",
+        book=book,
+        market="spreads",
+        outcome="Kansas City Chiefs",
+        price=price,
+        point=point,
+        captured_at=captured_at or NOW,
+    )
+
+
+async def _steam_event(session_factory):
+    from fairline.steam import scan_recent_steam
+
+    async with session_factory() as session:
+        session.add_all(_rows(NOW - timedelta(minutes=8), price_a=-110, price_b=-110))
+        session.add_all(_rows(NOW, price_a=-135, price_b=115))
+        await session.commit()
+    events = await scan_recent_steam(session_factory)
+    assert len(events) == 1
+    return events[0]
+
+
+async def test_create_candidates_flags_lagging_retail_books(session_factory):
+    from fairline.db.models import SteamCandidate
+    from fairline.steam import create_steam_candidates
+
+    event = await _steam_event(session_factory)
+    assert event.new_prob > 0.53  # -135/+115 devigs to ~.545 for the steamed side
+
+    async with session_factory() as session:
+        session.add(_retail_row("draftkings", price=-105))  # stale: implied .512 vs fair ~.545
+        session.add(_retail_row("fanduel", price=-125))  # already moved: implied .556
+        await session.commit()
+
+    created = await create_steam_candidates(session_factory, [event], [_upcoming_game()])
+
+    assert created == 1
+    async with session_factory() as session:
+        cand = (await session.execute(select(SteamCandidate))).scalars().one()
+    assert cand.book == "draftkings"
+    assert cand.selection == "Kansas City Chiefs -2.5"
+    assert cand.status == "pending"
+    assert cand.edge_pct > 0.02
+
+
+async def test_create_candidates_does_not_duplicate_pending(session_factory):
+    from fairline.db.models import SteamCandidate
+    from fairline.steam import create_steam_candidates
+
+    event = await _steam_event(session_factory)
+    async with session_factory() as session:
+        session.add(_retail_row("draftkings", price=-105))
+        await session.commit()
+
+    await create_steam_candidates(session_factory, [event], [_upcoming_game()])
+    await create_steam_candidates(session_factory, [event], [_upcoming_game()])
+
+    async with session_factory() as session:
+        rows = (await session.execute(select(SteamCandidate))).scalars().all()
+    assert len(rows) == 1
+
+
+async def test_approve_candidate_creates_steam_pick(session_factory):
+    from fairline.db.models import Pick, SteamCandidate
+    from fairline.steam import approve_steam_candidate, create_steam_candidates
+
+    event = await _steam_event(session_factory)
+    async with session_factory() as session:
+        session.add(_retail_row("draftkings", price=-105))
+        await session.commit()
+    await create_steam_candidates(session_factory, [event], [_upcoming_game()])
+
+    async with session_factory() as session:
+        cand_id = (await session.execute(select(SteamCandidate))).scalars().one().id
+
+    pick_id = await approve_steam_candidate(session_factory, cand_id, "alice")
+
+    assert pick_id is not None
+    async with session_factory() as session:
+        pick = (await session.execute(select(Pick))).scalars().one()
+        cand = (await session.execute(select(SteamCandidate))).scalars().one()
+    assert pick.source == "steam"
+    assert pick.user_id == "alice"
+    assert pick.book == "draftkings"
+    assert cand.status == "approved"
+
+    # a second approval attempt is a no-op
+    assert await approve_steam_candidate(session_factory, cand_id, "bob") is None

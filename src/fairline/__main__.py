@@ -46,6 +46,7 @@ async def _watch(interval_seconds: int, window_hours: float, once: bool, sport: 
 
     from fairline.db.session import get_session_factory
     from fairline.steam import (
+        create_steam_candidates,
         format_steam_event,
         games_in_window,
         record_snapshots,
@@ -64,8 +65,10 @@ async def _watch(interval_seconds: int, window_hours: float, once: bool, sport: 
                 return
             written = await record_snapshots(upcoming, factory, captured_at=now)
             events = await scan_recent_steam(factory)
+            pending = await create_steam_candidates(factory, events, upcoming) if events else 0
             print(
-                f"{now.isoformat(timespec='seconds')} games={len(upcoming)} rows={written} steam={len(events)}"
+                f"{now.isoformat(timespec='seconds')} games={len(upcoming)} rows={written} "
+                f"steam={len(events)} candidates={pending}"
             )
             for event in events:
                 line = format_steam_event(event)
