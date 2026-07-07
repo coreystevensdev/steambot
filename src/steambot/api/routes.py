@@ -17,13 +17,13 @@ from datetime import date, datetime, timezone
 
 import stripe
 from fastapi import APIRouter, Header, HTTPException, Request
-from pydantic import BaseModel
-from sqlalchemy import select
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import desc, select
 
 from langgraph.errors import GraphInterrupt
 
 from steambot.api.main import get_graph, get_http_client
-from steambot.db.models import User
+from steambot.db.models import Pick, User
 from steambot.db.session import get_session_factory
 from steambot.state import ApprovedPick, PickCandidate, SteamBotState
 
@@ -55,6 +55,34 @@ class RunStatusResponse(BaseModel):
 class ApprovePicksRequest(BaseModel):
     approved_pick_ids: list[str]
     user_id: str = "demo"
+
+
+class PickRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+    run_id: str
+    game_id: str
+    home_team: str
+    away_team: str
+    commence_time: datetime
+    market: str
+    selection: str
+    book: str
+    price: int
+    sharp_probability: float
+    blended_probability: float
+    edge_pct: float
+    ev_pct: float
+    confidence: str
+    rationale: str
+    approved_at: datetime
+    closing_price: int | None = None
+    closing_probability: float | None = None
+    clv: float | None = None
+    result: str | None = None
+    profit_units: float | None = None
 
 
 # In-memory run registry (per-instance; replace with DB for production).
@@ -91,7 +119,16 @@ async def start_run(req: StartRunRequest):
 
     _runs[run_id] = {"status": "running", "state": initial, "owner": req.user_id}
     graph = get_graph()
-    config = {"configurable": {"thread_id": run_id}}
+    config = {
+        "configurable": {"thread_id": run_id},
+        "run_name": f"picks/{req.sport}/{target_date}",
+        "metadata": {
+            "run_id": run_id,
+            "user_id": req.user_id,
+            "sport": req.sport,
+            "target_date": target_date,
+        },
+    }
 
     # Run graph asynchronously -- in production, offload to a background worker.
     try:
@@ -158,7 +195,15 @@ async def approve_picks(run_id: str, req: ApprovePicksRequest):
         raise HTTPException(status_code=409, detail=f"Run is {run['status']}, not awaiting_review")
 
     graph = get_graph()
-    config = {"configurable": {"thread_id": run_id}}
+    config = {
+        "configurable": {"thread_id": run_id},
+        "run_name": f"approve/{run_id[:8]}",
+        "metadata": {
+            "run_id": run_id,
+            "user_id": req.user_id,
+            "approved_count": len(req.approved_pick_ids),
+        },
+    }
 
     from langgraph.types import Command
 
@@ -176,6 +221,28 @@ async def approve_picks(run_id: str, req: ApprovePicksRequest):
         _runs[run_id]["status"] = "error"
         _runs[run_id]["error"] = "Approval failed. See server logs."
         raise HTTPException(status_code=500, detail="Approval failed")
+
+
+@router.get("/api/picks", response_model=list[PickRecord])
+async def list_picks(user_id: str | None = None, limit: int = 50):
+    """Return approved picks ordered by approval time, newest first.
+
+    Includes CLV columns once settlement has populated them. Useful for
+    verifying long-run edge: SELECT AVG(clv) WHERE result IS NOT NULL.
+    """
+    try:
+        factory = get_session_factory()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    async with factory() as session:
+        q = select(Pick).order_by(desc(Pick.approved_at)).limit(min(limit, 200))
+        if user_id:
+            q = q.where(Pick.user_id == user_id)
+        result = await session.execute(q)
+        picks = result.scalars().all()
+
+    return [PickRecord.model_validate(p) for p in picks]
 
 
 @router.post("/api/stripe/webhook", status_code=200)
