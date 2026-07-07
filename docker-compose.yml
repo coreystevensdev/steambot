@@ -29,6 +29,9 @@ services:
       LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
       LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-fairline}
       LANGCHAIN_ENDPOINT: ${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}
+      FAIRLINE_ENV: ${FAIRLINE_ENV:-}
+      FAIRLINE_SIM_WEIGHT: ${FAIRLINE_SIM_WEIGHT:-0.25}
+      FAIRLINE_WEBHOOK_URL: ${FAIRLINE_WEBHOOK_URL:-}
     depends_on:
       db:
         condition: service_healthy
