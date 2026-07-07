@@ -298,3 +298,26 @@ def test_closing_line_h2h_has_no_point():
     line = closing_line_for_selection(game, "h2h", "Kansas City Chiefs")
     assert line is not None
     assert line.point is None
+
+
+async def test_sim_clv_report_splits_agree_and_disagree(session_factory):
+    from steambot.clv import sim_clv_report
+
+    async with session_factory() as session:
+        # sim agreed with the sharp line (|sim - sharp| < threshold), beat the close
+        session.add(_pick(id="p-agree", sim_probability=0.55, clv=0.010, result="win"))
+        # sim disagreed hard, lost to the close
+        session.add(_pick(id="p-disagree", sim_probability=0.62, clv=-0.005, result="loss"))
+        # never settled -> excluded
+        session.add(_pick(id="p-unsettled", sim_probability=0.60))
+        # no sim supplied -> its own bucket
+        session.add(_pick(id="p-nosim", clv=0.002, result="win"))
+        await session.commit()
+
+    report = await sim_clv_report(session_factory, disagree_threshold=0.02)
+
+    assert report["agreed"]["count"] == 1
+    assert report["agreed"]["avg_clv"] == pytest.approx(0.010)
+    assert report["disagreed"]["count"] == 1
+    assert report["disagreed"]["avg_clv"] == pytest.approx(-0.005)
+    assert report["no_sim"]["count"] == 1

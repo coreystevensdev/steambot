@@ -105,3 +105,23 @@ def test_pick_candidate_risk_flags_default_empty():
         rationale="Small edge.",
     )
     assert pick.risk_flags == []
+
+
+def test_blend_no_sim_returns_sharp():
+    from steambot.state import blend_probability
+
+    assert blend_probability(0.55, None, 0.25) == 0.55
+
+
+def test_blend_weights_sim():
+    from steambot.state import blend_probability
+
+    # 0.75 * 0.50 + 0.25 * 0.60
+    assert blend_probability(0.50, 0.60, 0.25) == pytest.approx(0.525)
+
+
+def test_blend_weight_is_clamped():
+    from steambot.state import blend_probability
+
+    assert blend_probability(0.50, 0.60, 1.7) == pytest.approx(0.60)
+    assert blend_probability(0.50, 0.60, -0.3) == pytest.approx(0.50)

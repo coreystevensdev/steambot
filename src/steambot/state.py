@@ -65,6 +65,27 @@ def remove_vig(probs: list[float]) -> list[float]:
     return [p / total for p in probs]
 
 
+def blend_probability(sharp_prob: float, sim_prob: float | None, sim_weight: float) -> float:
+    """Weighted blend of the sharp no-vig probability and a simulation estimate.
+
+    Sharp-dominant by design: the sim earns weight only through demonstrated
+    CLV on picks where it disagreed with the market (see `steambot sim-report`).
+    """
+    if sim_prob is None:
+        return sharp_prob
+    w = min(1.0, max(0.0, sim_weight))
+    return (1 - w) * sharp_prob + w * sim_prob
+
+
+class SimLine(BaseModel):
+    """Caller-supplied simulation probability for one side of a market."""
+    home_team: str
+    away_team: str
+    market: str
+    selection: str
+    probability: float = Field(ge=0.0, le=1.0)
+
+
 class FairLine(BaseModel):
     """No-vig fair probability derived from a single bookmaker's market."""
     game_id: str
@@ -116,6 +137,7 @@ class SteamBotState(TypedDict):
     sport: str
     target_date: str  # ISO date, e.g., "2026-01-15"
     user_id: str
+    sim_lines: list[SimLine]
 
     # OddsAgent output
     games: list[GameSnapshot]

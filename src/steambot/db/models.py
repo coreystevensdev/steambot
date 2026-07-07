@@ -41,6 +41,8 @@ class Pick(Base):
     book: Mapped[str] = mapped_column(String(100))
     price: Mapped[int] = mapped_column(Integer)
     sharp_probability: Mapped[float] = mapped_column(Float)
+    # caller-supplied simulation estimate; NULL when no sim was provided for this pick
+    sim_probability: Mapped[float | None] = mapped_column(Float)
     blended_probability: Mapped[float] = mapped_column(Float)
     edge_pct: Mapped[float] = mapped_column(Float)
     ev_pct: Mapped[float] = mapped_column(Float)

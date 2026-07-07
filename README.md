@@ -1,7 +1,7 @@
 # SteamBot
 
 [![CI](https://github.com/coreystevensdev/steambot/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/steambot/actions)
-[![72 tests](https://img.shields.io/badge/tests-72-brightgreen)](https://github.com/coreystevensdev/steambot/actions)
+[![80 tests](https://img.shields.io/badge/tests-80-brightgreen)](https://github.com/coreystevensdev/steambot/actions)
 [![18-case eval](https://img.shields.io/badge/eval-18%20cases-blue)](eval/dataset.jsonl)
 
 Agentic NFL betting research service that finds closing line value before the market closes. Pulls Pinnacle sharp-book lines via The Odds API, strips vig to no-vig fair probabilities, then uses Claude to surface picks where retail prices measurably beat the sharp-market consensus. LangGraph HITL checkpoint requires user approval before any bet slip is prepared.
@@ -89,6 +89,30 @@ SELECT COUNT(*), AVG(clv), SUM(profit_units) FROM picks WHERE result IS NOT NULL
 ```
 
 Positive average CLV with a losing `profit_units` over a small sample means variance; negative CLV with a winning record means luck that will not hold.
+
+### Blending an external simulation
+
+If you run your own simulation model (stats, matchups, injuries, lineups), pass its probabilities into a run and they blend with the sharp line:
+
+```bash
+curl -s -X POST http://localhost:8000/api/runs \
+  -H "Authorization: Bearer $STEAMBOT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"sport": "americanfootball_nfl", "sims": [
+        {"home_team": "Kansas City Chiefs", "away_team": "Las Vegas Raiders",
+         "market": "spreads", "selection": "Kansas City Chiefs -3.5", "probability": 0.58}
+      ]}' | jq
+```
+
+The blend is sharp-dominant: `blended = 0.75 * sharp + 0.25 * sim` by default (`STEAMBOT_SIM_WEIGHT` overrides). Edge and EV are computed from the blended probability, so a sim that disagrees with the market changes which picks surface. Picks without a matching sim use the sharp line alone.
+
+The weight is not a matter of taste; the sim has to earn it:
+
+```bash
+python -m steambot sim-report
+```
+
+This splits settled picks into sim-agreed and sim-disagreed against the sharp line and compares average CLV. The disagreed bucket is the only place a sim can prove it carries information the market lacks. If that bucket's CLV is not positive over a real sample, the sim is adding confidence, not information, and its weight should go down, not up.
 
 ---
 
@@ -195,3 +219,4 @@ python -m eval --out eval/report.json
 5. **Grading has a 3-day window.** The scores endpoint reaches back at most 3 days. A pick whose game finished more than 3 days before `steambot grade` runs stays ungraded permanently; run it at least twice a week during the season.
 6. **API keys are minimal.** One key per user, no scopes, no expiry, rotation only via `create-user` re-run. Lookups compare SHA-256 hashes through a unique index; there is no per-key rate limiting, so a leaked key is fully capable until rotated.
 7. **MemorySaver in tests.** The graph uses `MemorySaver` (in-process) for local dev. Production requires `PostgresSaver` for checkpoints to survive restarts; the switchover is a one-line change in `graph.py`.
+8. **The sim weight is static.** `STEAMBOT_SIM_WEIGHT` applies uniformly to every pick and only changes when an operator reads `sim-report` and decides to change it. A calibrated system would fit the weight from the disagreement-bucket CLV; here that judgment is deliberately left to the human.

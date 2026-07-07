@@ -214,3 +214,36 @@ async def grade_results(scores: list[GameScore], session_factory) -> dict:
         await session.commit()
 
     return {"graded": graded, "pending": pending, "missed": missed}
+
+
+async def sim_clv_report(session_factory, disagree_threshold: float = 0.02) -> dict:
+    """Split settled picks by whether the sim agreed with the sharp line.
+
+    The sim earns blend weight only if avg CLV on disagreements is positive:
+    that is the subset where the sim claimed information the market lacked.
+    """
+    buckets: dict[str, list] = {"agreed": [], "disagreed": [], "no_sim": []}
+    async with session_factory() as session:
+        rows = (
+            (await session.execute(select(Pick).where(Pick.clv.is_not(None))))
+            .scalars()
+            .all()
+        )
+    for pick in rows:
+        if pick.sim_probability is None:
+            buckets["no_sim"].append(pick)
+        elif abs(pick.sim_probability - pick.sharp_probability) >= disagree_threshold:
+            buckets["disagreed"].append(pick)
+        else:
+            buckets["agreed"].append(pick)
+
+    def _summary(picks: list) -> dict:
+        if not picks:
+            return {"count": 0, "avg_clv": None, "profit_units": 0.0}
+        return {
+            "count": len(picks),
+            "avg_clv": sum(p.clv for p in picks) / len(picks),
+            "profit_units": sum(p.profit_units or 0.0 for p in picks),
+        }
+
+    return {name: _summary(picks) for name, picks in buckets.items()}

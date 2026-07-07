@@ -24,6 +24,16 @@ async def _settle(window_minutes: int) -> None:
     )
 
 
+async def _sim_report(threshold: float) -> None:
+    from steambot.clv import sim_clv_report
+    from steambot.db.session import get_session_factory
+
+    report = await sim_clv_report(get_session_factory(), disagree_threshold=threshold)
+    for bucket, s in report.items():
+        avg = f"{s['avg_clv']:+.4f}" if s["avg_clv"] is not None else "n/a"
+        print(f"{bucket}: count={s['count']} avg_clv={avg} profit_units={s['profit_units']:+.2f}")
+
+
 async def _create_user(email: str) -> None:
     from steambot.api.auth import issue_api_key
     from steambot.db.session import get_session_factory
@@ -73,6 +83,15 @@ def main() -> None:
         "create-user", help="create a user (or rotate their key) and print the API key once"
     )
     create_user.add_argument("--email", required=True)
+    sim_report = sub.add_parser(
+        "sim-report", help="compare CLV on picks where the sim agreed vs disagreed with the market"
+    )
+    sim_report.add_argument(
+        "--threshold",
+        type=float,
+        default=0.02,
+        help="minimum |sim - sharp| probability gap to count as disagreement (default 0.02)",
+    )
     args = parser.parse_args()
     if args.command == "settle":
         asyncio.run(_settle(args.window_minutes))
@@ -80,6 +99,8 @@ def main() -> None:
         asyncio.run(_grade(args.days_from))
     elif args.command == "create-user":
         asyncio.run(_create_user(args.email))
+    elif args.command == "sim-report":
+        asyncio.run(_sim_report(args.threshold))
 
 
 if __name__ == "__main__":

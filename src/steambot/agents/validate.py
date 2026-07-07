@@ -43,6 +43,7 @@ async def validate_agent(state: SteamBotState, session_factory=None) -> dict:
                 book=ap.pick.best_book,
                 price=ap.pick.best_price,
                 sharp_probability=ap.pick.sharp_probability,
+                sim_probability=ap.pick.sim_probability,
                 blended_probability=ap.pick.blended_probability,
                 edge_pct=ap.pick.edge_pct,
                 ev_pct=ap.pick.ev_pct,

@@ -25,8 +25,10 @@ from steambot.state import (
     FairLine,
     GameSnapshot,
     PickCandidate,
+    SimLine,
     SteamBotState,
     american_to_prob,
+    blend_probability,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,29 @@ _SUBMIT_PICKS_TOOL = {
 }
 
 _MIN_EDGE_PCT = 0.02  # only surface picks with at least 2% edge
+_DEFAULT_SIM_WEIGHT = 0.25  # sharp-dominant until the sim proves CLV on disagreements
+
+
+def _sim_weight() -> float:
+    try:
+        return float(os.environ.get("STEAMBOT_SIM_WEIGHT", _DEFAULT_SIM_WEIGHT))
+    except ValueError:
+        return _DEFAULT_SIM_WEIGHT
+
+
+def _sim_probability(
+    sim_lines: list[SimLine], game: GameSnapshot, market: str, outcome_name: str
+) -> float | None:
+    """Caller-supplied sim probability for this game/market/side, or None."""
+    for sl in sim_lines:
+        if (
+            sl.home_team == game.home_team
+            and sl.away_team == game.away_team
+            and sl.market == market
+            and (sl.selection == outcome_name or sl.selection.startswith(outcome_name + " "))
+        ):
+            return sl.probability
+    return None
 
 
 def _best_retail_price(game: GameSnapshot, market_key: str, selection: str) -> tuple[str, int] | None:
@@ -170,7 +195,8 @@ async def pick_agent(state: SteamBotState) -> dict:
         if idx is None:
             continue
         sharp_prob = fl.fair_probs[idx]
-        blended_prob = sharp_prob  # no sim layer yet; extend here
+        sim_prob = _sim_probability(state.get("sim_lines", []), game, market, fl.outcomes[idx])
+        blended_prob = blend_probability(sharp_prob, sim_prob, _sim_weight())
 
         retail = _best_retail_price(game, market, fl.outcomes[idx])
         if not retail:
@@ -197,6 +223,7 @@ async def pick_agent(state: SteamBotState) -> dict:
                 best_book=retail_book,
                 best_price=retail_price,
                 sharp_probability=sharp_prob,
+                sim_probability=sim_prob,
                 blended_probability=blended_prob,
                 implied_probability=implied_prob,
                 edge_pct=edge_pct,

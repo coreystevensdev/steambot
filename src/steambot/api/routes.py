@@ -26,7 +26,7 @@ from steambot.api.auth import Principal, require_user
 from steambot.api.main import get_graph, get_http_client
 from steambot.db.models import Pick, User
 from steambot.db.session import get_session_factory
-from steambot.state import ApprovedPick, PickCandidate, SteamBotState
+from steambot.state import ApprovedPick, PickCandidate, SimLine, SteamBotState
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,9 @@ router = APIRouter()
 class StartRunRequest(BaseModel):
     sport: str = "americanfootball_nfl"
     target_date: str = ""  # defaults to today
+    # external simulation probabilities, matched to games by team names;
+    # picks without a matching sim blend at weight 0 (sharp line only)
+    sims: list[SimLine] = []
 
 
 class StartRunResponse(BaseModel):
@@ -71,6 +74,7 @@ class PickRecord(BaseModel):
     book: str
     price: int
     sharp_probability: float
+    sim_probability: float | None = None
     blended_probability: float
     edge_pct: float
     ev_pct: float
@@ -107,6 +111,7 @@ async def start_run(req: StartRunRequest, user: Principal = Depends(require_user
         "sport": req.sport,
         "target_date": target_date,
         "user_id": user.user_id,
+        "sim_lines": req.sims,
         "games": [],
         "fair_lines": [],
         "candidates": [],
