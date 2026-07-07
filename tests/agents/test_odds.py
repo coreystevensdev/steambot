@@ -1,6 +1,6 @@
 """Unit tests for odds_agent node logic.
 
-Tests cover _best_sharp_book priority ordering and _derive_fair_line math.
+Tests cover best_sharp_book priority ordering and _derive_fair_line math.
 These are pure (no network, no graph) so they run without API keys.
 """
 
@@ -10,7 +10,7 @@ from datetime import datetime
 
 import pytest
 
-from steambot.agents.odds import _best_sharp_book, _derive_fair_line
+from steambot.agents.odds import best_sharp_book, _derive_fair_line
 from steambot.state import (
     BookmakerOdds,
     GameSnapshot,
@@ -44,23 +44,23 @@ def _make_game(bookmaker_keys: list[str], market_prices: list[int] | None = None
 class TestBestSharpBook:
     def test_pinnacle_wins_over_betonline(self):
         game = _make_game(["betonlineag", "pinnacle", "fanduel"])
-        assert _best_sharp_book(game) == "pinnacle"
+        assert best_sharp_book(game) == "pinnacle"
 
     def test_betonline_wins_when_pinnacle_absent(self):
         game = _make_game(["mybookieag", "betonlineag", "fanduel"])
-        assert _best_sharp_book(game) == "betonlineag"
+        assert best_sharp_book(game) == "betonlineag"
 
     def test_mybookie_last_resort(self):
         game = _make_game(["mybookieag", "draftkings"])
-        assert _best_sharp_book(game) == "mybookieag"
+        assert best_sharp_book(game) == "mybookieag"
 
     def test_no_sharp_book_returns_none(self):
         game = _make_game(["fanduel", "draftkings", "betmgm"])
-        assert _best_sharp_book(game) is None
+        assert best_sharp_book(game) is None
 
     def test_only_pinnacle_present(self):
         game = _make_game(["pinnacle"])
-        assert _best_sharp_book(game) == "pinnacle"
+        assert best_sharp_book(game) == "pinnacle"
 
 
 class TestDeriveFairLine:

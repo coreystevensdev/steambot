@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _SHARP_PRIORITY = ["pinnacle", "betonlineag", "mybookieag"]
 
 
-def _best_sharp_book(game: GameSnapshot) -> str | None:
+def best_sharp_book(game: GameSnapshot) -> str | None:
     book_keys = {bm.key for bm in game.bookmakers}
     for key in _SHARP_PRIORITY:
         if key in book_keys:
@@ -64,7 +64,7 @@ async def odds_agent(state: SteamBotState, client: httpx.AsyncClient) -> dict:
 
     fair_lines: list[FairLine] = []
     for game in games:
-        sharp_book = _best_sharp_book(game)
+        sharp_book = best_sharp_book(game)
         if not sharp_book:
             logger.warning("game=%s has no sharp-line reference -- skipping", game.game_id)
             continue
