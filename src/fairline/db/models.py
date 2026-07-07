@@ -110,3 +110,20 @@ class GameResult(Base):
     # home team's closing handicap (-3.5 = home favored); NULL when no snapshot exists
     closing_spread_home: Mapped[float | None] = mapped_column(Float)
     closing_total: Mapped[float | None] = mapped_column(Float)
+
+
+class Run(Base):
+    """Run registry row: status and ownership only.
+
+    Graph state (candidates, approvals) lives in the LangGraph checkpointer;
+    this table exists so ownership checks and status survive restarts and are
+    shared across processes (the API and the steam watcher).
+    """
+
+    __tablename__ = "runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

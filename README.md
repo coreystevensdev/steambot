@@ -1,7 +1,7 @@
 # Fairline
 
 [![CI](https://github.com/coreystevensdev/fairline/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/fairline/actions)
-[![121 tests](https://img.shields.io/badge/tests-121-brightgreen)](https://github.com/coreystevensdev/fairline/actions)
+[![125 tests](https://img.shields.io/badge/tests-125-brightgreen)](https://github.com/coreystevensdev/fairline/actions)
 [![18-case eval](https://img.shields.io/badge/eval-18%20cases-blue)](eval/dataset.jsonl)
 
 Agentic betting research service for NFL, NBA, MLB, and NHL that finds closing line value before the market closes. Pulls Pinnacle sharp-book lines via The Odds API, strips vig to no-vig fair probabilities, then uses Claude to surface picks where retail prices measurably beat the sharp-market consensus. LangGraph HITL checkpoint requires user approval before any bet slip is prepared. Every pick carries its producing agent as a byline, and each agent's record is graded by CLV, a harder standard than win rate.
@@ -271,5 +271,5 @@ python -m eval --out eval/report.json
 4. **The clv number ignores point drift.** A spread bet at -3.5 that closes at -4.0 is compared by price only. The closing line is stored in `closing_point`, so the drift is queryable (`SELECT selection, closing_point FROM picks`), but it is not folded into the single `clv` float; converting a half point of NFL spread movement to probability requires a push-chart model that is out of scope.
 5. **Grading has a 3-day window.** The scores endpoint reaches back at most 3 days. A pick whose game finished more than 3 days before `fairline grade` runs stays ungraded permanently; run it at least twice a week during the season.
 6. **API keys are minimal.** One key per user, no scopes, no expiry, rotation only via `create-user` re-run. Lookups compare SHA-256 hashes through a unique index; there is no per-key rate limiting, so a leaked key is fully capable until rotated.
-7. **MemorySaver in tests.** The graph uses `MemorySaver` (in-process) for local dev. Production requires `PostgresSaver` for checkpoints to survive restarts; the switchover is a one-line change in `graph.py`.
+7. **MemorySaver in tests.** Run status and ownership now live in the `runs` table and survive restarts, but graph state (candidates awaiting approval) still uses `MemorySaver` in local dev. Production requires `PostgresSaver` for the HITL pause itself to survive a restart; the switchover is a one-line change in `graph.py`.
 8. **The sim weight is static.** `FAIRLINE_SIM_WEIGHT` applies uniformly to every pick and only changes when an operator reads `sim-report` and decides to change it. A calibrated system would fit the weight from the disagreement-bucket CLV; here that judgment is deliberately left to the human.

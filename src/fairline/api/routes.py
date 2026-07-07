@@ -24,6 +24,7 @@ from langgraph.errors import GraphInterrupt
 
 from fairline.api.auth import Principal, require_user
 from fairline.api.main import get_graph, get_http_client
+from fairline.runs import create_run, fetch_run, update_run
 from fairline.db.models import Pick, User
 from fairline.db.session import get_session_factory
 from fairline.state import ApprovedPick, PickCandidate, SimLine, FairlineState
@@ -90,12 +91,16 @@ class PickRecord(BaseModel):
     profit_units: float | None = None
 
 
-# In-memory run registry (per-instance; replace with DB for production).
-_runs: dict[str, dict] = {}
+def _registry_factory():
+    try:
+        return get_session_factory()
+    except RuntimeError:
+        return None
+
 
 # Stripe event ids we have already applied (per-instance; a redelivery or an
 # out-of-order created/deleted pair would otherwise flip is_pro incorrectly).
-# Mirrors the _runs per-instance limitation: replace with a DB table in production.
+# Last remaining in-process registry; a DB table is the production answer.
 _processed_stripe_events: set[str] = set()
 
 
@@ -131,7 +136,8 @@ async def start_run(req: StartRunRequest, user: Principal = Depends(require_user
         "error": None,
     }
 
-    _runs[run_id] = {"status": "running", "state": initial, "owner": user.user_id}
+    registry = _registry_factory()
+    await create_run(registry, run_id, user.user_id)
     graph = get_graph()
     config = {
         "configurable": {"thread_id": run_id},
@@ -145,36 +151,38 @@ async def start_run(req: StartRunRequest, user: Principal = Depends(require_user
     }
 
     # Run graph asynchronously -- in production, offload to a background worker.
+    status = "running"
     try:
         result = await graph.ainvoke(initial, config=config)
         if result.get("error"):
-            _runs[run_id]["status"] = "error"
-            _runs[run_id]["error"] = result["error"]
+            status = "error"
+            await update_run(registry, run_id, status, error=result["error"])
         elif result.get("candidates"):
-            _runs[run_id]["status"] = "awaiting_review"
-            _runs[run_id]["state"] = result
+            status = "awaiting_review"
+            await update_run(registry, run_id, status)
         else:
-            _runs[run_id]["status"] = "complete"
-            _runs[run_id]["state"] = result
+            status = "complete"
+            await update_run(registry, run_id, status)
     except GraphInterrupt:
-        _runs[run_id]["status"] = "awaiting_review"
+        status = "awaiting_review"
+        await update_run(registry, run_id, status)
     except Exception:
         logger.exception("start_run: graph invocation failed for run_id=%s", run_id)
-        _runs[run_id]["status"] = "error"
-        _runs[run_id]["error"] = "Run failed. See server logs."
+        status = "error"
+        await update_run(registry, run_id, status, error="Run failed. See server logs.")
 
     return StartRunResponse(
         run_id=run_id,
-        status=_runs[run_id]["status"],
+        status=status,
         message=f"Run {run_id} started for {target_date}",
     )
 
 
 @router.get("/api/runs/{run_id}", response_model=RunStatusResponse)
 async def get_run(run_id: str, user: Principal = Depends(require_user)):
-    run = _runs.get(run_id)
+    run = await fetch_run(_registry_factory(), run_id)
     # 404 for both missing and non-owned runs so a caller cannot probe run_ids they do not own
-    if not run or run.get("owner") != user.user_id:
+    if not run or run["user_id"] != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
     graph = get_graph()
     config = {"configurable": {"thread_id": run_id}}
@@ -194,15 +202,16 @@ async def get_run(run_id: str, user: Principal = Depends(require_user)):
         logger.warning("get_run: could not fetch graph state for run_id=%s: %s", run_id, exc)
         return RunStatusResponse(
             run_id=run_id,
-            status=run.get("status", "unknown"),
-            error=run.get("error"),
+            status=run["status"],
+            error=run["error"],
         )
 
 
 @router.post("/api/runs/{run_id}/approve", response_model=RunStatusResponse)
 async def approve_picks(run_id: str, req: ApprovePicksRequest, user: Principal = Depends(require_user)):
-    run = _runs.get(run_id)
-    if not run or run.get("owner") != user.user_id:
+    registry = _registry_factory()
+    run = await fetch_run(registry, run_id)
+    if not run or run["user_id"] != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
     if run["status"] != "awaiting_review":
         raise HTTPException(status_code=409, detail=f"Run is {run['status']}, not awaiting_review")
@@ -225,14 +234,12 @@ async def approve_picks(run_id: str, req: ApprovePicksRequest, user: Principal =
             Command(resume=req.approved_pick_ids),
             config=config,
         )
-        _runs[run_id]["status"] = "complete"
-        _runs[run_id]["state"] = result
+        await update_run(registry, run_id, "complete")
         approved = [p.model_dump() if hasattr(p, "model_dump") else p for p in (result.get("approved_picks") or [])]
         return RunStatusResponse(run_id=run_id, status="complete", approved_picks=approved)
     except Exception:
         logger.exception("approve_picks: resume failed for run_id=%s", run_id)
-        _runs[run_id]["status"] = "error"
-        _runs[run_id]["error"] = "Approval failed. See server logs."
+        await update_run(registry, run_id, "error", error="Approval failed. See server logs.")
         raise HTTPException(status_code=500, detail="Approval failed")
 
 
