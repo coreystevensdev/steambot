@@ -1,7 +1,7 @@
 # Fairline
 
 [![CI](https://github.com/coreystevensdev/fairline/actions/workflows/ci.yml/badge.svg)](https://github.com/coreystevensdev/fairline/actions)
-[![147 tests](https://img.shields.io/badge/tests-147-brightgreen)](https://github.com/coreystevensdev/fairline/actions)
+[![155 tests](https://img.shields.io/badge/tests-155-brightgreen)](https://github.com/coreystevensdev/fairline/actions)
 [![18-case eval](https://img.shields.io/badge/eval-18%20cases-blue)](eval/dataset.jsonl)
 
 Agentic betting research service for NFL, NBA, MLB, and NHL that finds closing line value before the market closes. Pulls Pinnacle sharp-book lines via The Odds API, strips vig to no-vig fair probabilities, then uses Claude to surface picks where retail prices measurably beat the sharp-market consensus. LangGraph HITL checkpoint requires user approval before any bet slip is prepared. Every pick carries its producing agent as a byline, and each agent's record is graded by CLV, a harder standard than win rate.
@@ -129,6 +129,23 @@ python -m fairline props --sport americanfootball_nfl --min-edge 0.03 --max-even
 
 Props cost one API request per event per scan, unlike game odds where one request covers the whole slate; `--max-events` caps the spend.
 
+### The matchup agent
+
+The prop-filter workflow, automated (design: `docs/matchup-agent-design.md`). Seed player game logs, then scan:
+
+```bash
+python -m fairline backfill-players --seasons 2023 2024 2025
+python -m fairline matchup --sport americanfootball_nfl --max-events 5
+```
+
+For each prop, the engine computes a pre-registered set of splits (last 5, last 10, season, vs this opponent) against the line, shrinks each hit rate toward the market's fair probability with a beta-binomial prior (8-of-10 reads as roughly 65%, not 80%), and combines them into a probability clamped within 6 points of the sharp fair number. Where that history-adjusted number beats a retail price, a candidate lands in the same review queue as steam picks, tagged `source=matchup`, with the splits spelled out in the rationale:
+
+```
+fair 0.500 -> matchup 0.552; Over angles: last_5 3-2 over 250.5; last_10 7-3 over 250.5; season 9-5 over 250.5; vs_opponent 1-3 over 250.5
+```
+
+Approved matchup picks grade automatically against box scores (`fairline grade` matches player, date, and stat; exact landings push) and earn their own row on the agent leaderboard. The splits are fixed in code, never searched per prop: letting anything hunt for the best-looking slice is the multiple-comparisons trap that makes every prop "8 of the last 10" at something.
+
 ### The simulation model
 
 The `sim_agent` node computes probabilities per sport before picks are generated. NFL and NBA use a Normal margin family (Elo-style points ratings, sigma 13.5 and 11.5); NHL and MLB are low-scoring count sports, so they use a double-Poisson scoring model built from team rates, with regulation ties split by relative strength since neither sport can end tied. For NFL: Elo-style points-scale team ratings fit from stored game results (home-field advantage 2.0, ratings regress a third toward zero between seasons), a Normal margin model (sigma 13.5) for win and cover probabilities, and a totals model built from current-season team scoring rates (Normal, sigma 10) for over/under probabilities. All arithmetic is code over data; Claude is never asked to estimate a probability. Seed the ratings with history in one command:
@@ -177,7 +194,7 @@ STEAM Kansas City Chiefs (spreads) -110 -> -125 point -2.5 -> -3.0 KEY prob +0.0
 
 Use `--once` under cron. Every poll costs one Odds API request per league; the quota math lives in Running a season.
 
-Steam events also become pick candidates: the watcher scans the same cycle's retail prices for books still at least 2 points of implied probability behind the new sharp number and queues them as pending candidates with the edge math attached. Review and approve:
+Steam events also become pick candidates: the watcher scans the same cycle's retail prices for books still at least 2 points of implied probability behind the new sharp number and queues them as pending candidates with the edge math attached. The queue is shared with the matchup agent (candidates carry a `source`); review and approve:
 
 ```
 GET  /api/steam                      pending candidates, newest first

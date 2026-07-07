@@ -339,6 +339,7 @@ async def create_steam_candidates(
                         edge_pct=edge,
                         ev_pct=event.new_prob * win_amount - (1 - event.new_prob),
                         rationale=f"{format_steam_event(event)}; {row.book} stale at {row.price:+d}",
+                        source="steam",
                         status="pending",
                     )
                 )
@@ -369,7 +370,7 @@ async def approve_steam_candidate(session_factory, candidate_id: str, user_id: s
             Pick(
                 id=pick_id,
                 user_id=user_id,
-                run_id=f"steam:{cand.id[:8]}",
+                run_id=f"{cand.source}:{cand.id[:8]}",
                 sport=cand.sport,
                 game_id=cand.game_id,
                 home_team=cand.home_team,
@@ -386,7 +387,7 @@ async def approve_steam_candidate(session_factory, candidate_id: str, user_id: s
                 ev_pct=cand.ev_pct,
                 confidence=_confidence(cand.edge_pct),
                 rationale=cand.rationale,
-                source="steam",
+                source=cand.source,
                 approved_at=datetime.now(_tz.utc),
             )
         )

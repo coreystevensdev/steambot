@@ -130,16 +130,17 @@ class Run(Base):
 
 
 class SteamCandidate(Base):
-    """A retail price lagging a detected sharp move, awaiting human approval.
+    """A deterministic pick candidate awaiting human approval.
 
-    Steam picks skip the LangGraph pipeline (no Claude call needed; the math
-    is deterministic) but not the human: approval turns a candidate into a
-    Pick with source="steam", entering the same settlement and grading.
+    Named for its first producer, now the shared review queue: steam and
+    matchup candidates both land here (distinguished by source), and approval
+    turns one into a Pick carrying that source into settlement and grading.
     """
 
     __tablename__ = "steam_candidates"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="steam", server_default="steam")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     sport: Mapped[str] = mapped_column(String(50), nullable=False)
     game_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -156,3 +157,25 @@ class SteamCandidate(Base):
     ev_pct: Mapped[float] = mapped_column(Float, nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending", server_default="pending")
+
+
+class PlayerGame(Base):
+    """One player's stat line for one game, the matchup agent's raw material."""
+
+    __tablename__ = "player_games"
+    __table_args__ = (Index("ix_player_games_player", "sport", "player", "season", "week"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sport: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="americanfootball_nfl", server_default="americanfootball_nfl"
+    )
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    week: Mapped[int] = mapped_column(Integer, nullable=False)
+    game_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    player: Mapped[str] = mapped_column(String(100), nullable=False)
+    team: Mapped[str] = mapped_column(String(100), nullable=False)
+    opponent: Mapped[str] = mapped_column(String(100), nullable=False)
+    passing_yards: Mapped[float | None] = mapped_column(Float)
+    rushing_yards: Mapped[float | None] = mapped_column(Float)
+    receiving_yards: Mapped[float | None] = mapped_column(Float)
+    receptions: Mapped[float | None] = mapped_column(Float)

@@ -100,9 +100,13 @@ async def _grade(days_from: int, sport: str) -> None:
             scores.extend(league_scores)
             results_recorded += await record_game_results(league_scores, factory, sport=s)
     summary = await grade_results(scores, factory)
+    from fairline.matchup import grade_prop_picks
+
+    props = await grade_prop_picks(factory)
     print(
         f"graded={summary['graded']} pending={summary['pending']} "
-        f"missed={summary['missed']} results_recorded={results_recorded}"
+        f"missed={summary['missed']} results_recorded={results_recorded} "
+        f"props_graded={props['graded']} props_missed={props['missed']}"
     )
 
 
@@ -122,6 +126,76 @@ async def _backfill_nfl(seasons: list[int]) -> None:
             await session.merge(r)
         await session.commit()
     print(f"backfilled {len(wanted)} games for seasons {sorted(set(seasons))}")
+
+
+async def _backfill_players(seasons: list[int]) -> None:
+    from sqlalchemy import delete
+
+    from fairline.db.models import PlayerGame
+    from fairline.db.session import get_session_factory
+    from fairline.matchup import PLAYER_STATS_URL, parse_player_stats
+    from fairline.sim import NFLVERSE_GAMES_URL
+
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        games_resp = await client.get(NFLVERSE_GAMES_URL, timeout=60.0)
+        games_resp.raise_for_status()
+        import csv as _csv
+        import io as _io
+        from datetime import datetime as _dt
+
+        date_lookup = {}
+        for row in _csv.DictReader(_io.StringIO(games_resp.text)):
+            try:
+                season, week = int(row["season"]), int(row["week"])
+                gameday = _dt.fromisoformat(row["gameday"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            date_lookup[(row.get("home_team"), season, week)] = gameday
+            date_lookup[(row.get("away_team"), season, week)] = gameday
+
+        factory = get_session_factory()
+        total = 0
+        for season in sorted(set(seasons)):
+            resp = await client.get(PLAYER_STATS_URL.format(season=season), timeout=120.0)
+            resp.raise_for_status()
+            rows = parse_player_stats(resp.text, date_lookup)
+            async with factory() as session:
+                await session.execute(
+                    delete(PlayerGame).where(
+                        PlayerGame.sport == "americanfootball_nfl",
+                        PlayerGame.season == season,
+                    )
+                )
+                session.add_all(rows)
+                await session.commit()
+            total += len(rows)
+            print(f"season {season}: {len(rows)} player games")
+        print(f"backfilled {total} player games")
+
+
+async def _matchup(sport: str, markets: str, min_edge: float, max_events: int) -> None:
+    from datetime import datetime, timezone
+
+    from fairline.clients.odds_api import fetch_event_props, fetch_odds
+    from fairline.db.session import get_session_factory
+    from fairline.matchup import create_matchup_candidates
+
+    factory = get_session_factory()
+    async with httpx.AsyncClient() as client:
+        games = await fetch_odds(client, sport)
+        now = datetime.now(timezone.utc)
+        upcoming = sorted(
+            (g for g in games if g.commence_time > now), key=lambda g: g.commence_time
+        )[:max_events]
+        if not upcoming:
+            print("no upcoming events")
+            return
+        created = 0
+        for game in upcoming:
+            snap = await fetch_event_props(client, sport, game.game_id, markets=markets)
+            if snap is not None:
+                created += await create_matchup_candidates(factory, snap, min_edge=min_edge)
+    print(f"events={len(upcoming)} candidates={created} (review at GET /api/steam)")
 
 
 async def _trends(team: str, last_n: int) -> None:
@@ -292,6 +366,26 @@ def main() -> None:
         "--seasons", type=int, nargs="+", default=[2023, 2024, 2025],
         help="seasons to import (default: 2023 2024 2025)",
     )
+    backfill_players = sub.add_parser(
+        "backfill-players", help="seed player_games from nflverse weekly stats"
+    )
+    backfill_players.add_argument(
+        "--seasons", type=int, nargs="+", default=[2023, 2024, 2025],
+        help="seasons to import (default: 2023 2024 2025)",
+    )
+    matchup = sub.add_parser(
+        "matchup", help="queue prop candidates where history-adjusted numbers beat retail"
+    )
+    _add_sport_arg(matchup)
+    matchup.add_argument(
+        "--markets",
+        default="player_pass_yds,player_rush_yds,player_reception_yds,player_receptions",
+    )
+    matchup.add_argument("--min-edge", type=float, default=0.03)
+    matchup.add_argument(
+        "--max-events", type=int, default=5,
+        help="props cost one API request per event; this caps the spend (default 5)",
+    )
     trends = sub.add_parser("trends", help="SU/ATS/O-U record for a team from stored results")
     trends.add_argument("--team", required=True)
     trends.add_argument("--last", type=int, default=10, help="window size in games (default 10)")
@@ -321,6 +415,10 @@ def main() -> None:
         asyncio.run(_backfill_nfl(args.seasons))
     elif args.command == "props":
         asyncio.run(_props(args.sport, args.markets, args.min_edge, args.max_events))
+    elif args.command == "backfill-players":
+        asyncio.run(_backfill_players(args.seasons))
+    elif args.command == "matchup":
+        asyncio.run(_matchup(args.sport, args.markets, args.min_edge, args.max_events))
     elif args.command == "watch":
         asyncio.run(_watch(args.interval_seconds, args.window_hours, args.once, args.sport))
 
