@@ -103,6 +103,24 @@ async def _grade(days_from: int, sport: str) -> None:
     )
 
 
+async def _backfill_nfl(seasons: list[int]) -> None:
+    from fairline.db.session import get_session_factory
+    from fairline.sim import NFLVERSE_GAMES_URL, parse_nflverse_games
+
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        resp = await client.get(NFLVERSE_GAMES_URL, timeout=60.0)
+        resp.raise_for_status()
+    _, results = parse_nflverse_games(resp.text)
+    wanted = [r for r in results if int(r.game_id.split("_")[0]) in set(seasons)]
+
+    factory = get_session_factory()
+    async with factory() as session:
+        for r in wanted:
+            await session.merge(r)
+        await session.commit()
+    print(f"backfilled {len(wanted)} games for seasons {sorted(set(seasons))}")
+
+
 async def _trends(team: str, last_n: int) -> None:
     from sqlalchemy import or_, select
 
@@ -219,6 +237,13 @@ def main() -> None:
     )
     _add_sport_arg(watch)
     sub.add_parser("agents", help="per-agent leaderboard: record, avg CLV, units")
+    backfill = sub.add_parser(
+        "backfill-nfl", help="seed game_results (scores + closing lines) from nflverse"
+    )
+    backfill.add_argument(
+        "--seasons", type=int, nargs="+", default=[2023, 2024, 2025],
+        help="seasons to import (default: 2023 2024 2025)",
+    )
     trends = sub.add_parser("trends", help="SU/ATS/O-U record for a team from stored results")
     trends.add_argument("--team", required=True)
     trends.add_argument("--last", type=int, default=10, help="window size in games (default 10)")
@@ -244,6 +269,8 @@ def main() -> None:
         asyncio.run(_agents())
     elif args.command == "trends":
         asyncio.run(_trends(args.team, args.last))
+    elif args.command == "backfill-nfl":
+        asyncio.run(_backfill_nfl(args.seasons))
     elif args.command == "watch":
         asyncio.run(_watch(args.interval_seconds, args.window_hours, args.once, args.sport))
 
