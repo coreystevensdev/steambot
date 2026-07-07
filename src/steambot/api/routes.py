@@ -227,6 +227,10 @@ async def approve_picks(run_id: str, req: ApprovePicksRequest):
 async def list_picks(user_id: str, limit: int = Query(50, ge=1, le=200)):
     """Return approved picks for a user, ordered by approval time, newest first.
 
+    user_id is caller-supplied with no JWT verification (same as all run
+    endpoints). Adding auth is the first production-readiness gap; see
+    Known Limitations in README.
+
     Includes CLV columns once settlement has populated them. Useful for
     verifying long-run edge: SELECT AVG(clv) WHERE result IS NOT NULL.
     """

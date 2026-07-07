@@ -108,7 +108,7 @@ LANGCHAIN_PROJECT=steambot
 Each picks run produces two traces in the LangSmith UI:
 
 - `picks/americanfootball_nfl/2026-01-15` -- covers odds fetch, fair-line derivation, Claude pick generation, and the HITL pause
-- `approve/<run_id>` -- covers the resume and pick persistence
+- `approve/<run_id[:8]>` -- covers the resume and pick persistence
 
 Tracing is optional. The service starts and runs normally without `LANGCHAIN_API_KEY` set.
 
