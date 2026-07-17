@@ -129,12 +129,34 @@ def _format_trends(team_trends: dict, team: str) -> str:
     return line
 
 
+def _format_team_stats(team_stats: dict, team: str) -> str:
+    """Up to 6 numeric fields, sorted by key so output is deterministic across
+    the four sports' very different stat schemas (no per-sport field mapping)."""
+    stats = team_stats.get(team)
+    if not stats:
+        return ""
+    numeric = {k: v for k, v in stats.items() if isinstance(v, (int, float))}
+    if not numeric:
+        return ""
+    top = sorted(numeric.items())[:6]
+    return f"{team}: " + ", ".join(f"{k}={v}" for k, v in top)
+
+
+def _format_steam(steam_signal: dict, game_id: str) -> str:
+    events = steam_signal.get(game_id)
+    if not events:
+        return ""
+    return "\n  Steam moves: " + "; ".join(events)
+
+
 def _build_prompt(
     games: list[GameSnapshot],
     fair_lines: list[FairLine],
     team_trends: dict | None = None,
     game_weather: dict | None = None,
     team_injuries: dict | None = None,
+    team_stats: dict | None = None,
+    steam_signal: dict | None = None,
 ) -> str:
     lines_by_game: dict[str, list[FairLine]] = {}
     for fl in fair_lines:
@@ -142,6 +164,8 @@ def _build_prompt(
     team_trends = team_trends or {}
     game_weather = game_weather or {}
     team_injuries = team_injuries or {}
+    team_stats = team_stats or {}
+    steam_signal = steam_signal or {}
 
     sections = []
     for game in games:
@@ -164,6 +188,13 @@ def _build_prompt(
             if inj:
                 inj_lines.append(f"{team}: " + ", ".join(inj["notes"][:4]))
         inj_text = ("\n  Injuries: " + " | ".join(inj_lines)) if inj_lines else ""
+        stats_lines = [
+            _format_team_stats(team_stats, t)
+            for t in (game.home_team, game.away_team)
+            if _format_team_stats(team_stats, t)
+        ]
+        stats_text = ("\n  Season stats: " + "; ".join(stats_lines)) if stats_lines else ""
+        steam_text = _format_steam(steam_signal, game.game_id)
         wx = game_weather.get(game.game_id)
         wx_text = ""
         if wx:
@@ -175,7 +206,7 @@ def _build_prompt(
         sections.append(
             f"GAME: {game.away_team} @ {game.home_team} -- {game.commence_time.strftime('%a %b %d %I:%M %p UTC')}\n"
             f"  game_id: {game.game_id}\n"
-            f"  Fair probabilities (no-vig):\n{fl_text}{trend_text}{wx_text}{inj_text}"
+            f"  Fair probabilities (no-vig):\n{fl_text}{trend_text}{stats_text}{wx_text}{inj_text}{steam_text}"
         )
 
     return (
@@ -208,6 +239,8 @@ async def pick_agent(state: FairlineState) -> dict:
         state.get("team_trends"),
         state.get("game_weather"),
         state.get("team_injuries"),
+        state.get("team_stats"),
+        state.get("steam_signal"),
     )
 
     resp = client.messages.create(
