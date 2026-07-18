@@ -182,6 +182,12 @@ class PlayerGame(Base):
     rushing_yards: Mapped[float | None] = mapped_column(Float)
     receiving_yards: Mapped[float | None] = mapped_column(Float)
     receptions: Mapped[float | None] = mapped_column(Float)
+    # nflverse games-CSV context, joined in by (team, season, week); nullable
+    # since rows from prior backfills predate these columns
+    is_home: Mapped[bool | None] = mapped_column(Boolean)
+    surface: Mapped[str | None] = mapped_column(String(30))
+    is_primetime: Mapped[bool | None] = mapped_column(Boolean)
+    bad_weather: Mapped[bool | None] = mapped_column(Boolean)
 
 
 class MlbPlayerGame(Base):
