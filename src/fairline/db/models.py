@@ -182,3 +182,29 @@ class PlayerGame(Base):
     rushing_yards: Mapped[float | None] = mapped_column(Float)
     receiving_yards: Mapped[float | None] = mapped_column(Float)
     receptions: Mapped[float | None] = mapped_column(Float)
+
+
+class MlbPlayerGame(Base):
+    """One MLB batter's stat line for one game, with the game context the
+    situational splits need (day/night, home/away, opposing starter)."""
+
+    __tablename__ = "mlb_player_games"
+    __table_args__ = (Index("ix_mlb_player_games_player", "player", "season"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    game_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    player: Mapped[str] = mapped_column(String(100), nullable=False)
+    team: Mapped[str] = mapped_column(String(100), nullable=False)
+    opponent: Mapped[str] = mapped_column(String(100), nullable=False)
+    # the starting pitcher this batter faced; NULL when not yet derived/backfilled
+    opposing_pitcher: Mapped[str | None] = mapped_column(String(100))
+    is_home: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    day_night: Mapped[str] = mapped_column(String(10), nullable=False)  # "day" | "night"
+    at_bats: Mapped[int | None] = mapped_column(Integer)
+    hits: Mapped[int | None] = mapped_column(Integer)
+    home_runs: Mapped[int | None] = mapped_column(Integer)
+    rbis: Mapped[int | None] = mapped_column(Integer)
+    total_bases: Mapped[int | None] = mapped_column(Integer)
+    strikeouts: Mapped[int | None] = mapped_column(Integer)
+    walks: Mapped[int | None] = mapped_column(Integer)
