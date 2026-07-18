@@ -46,6 +46,11 @@ class TestComputeNhlPropSplits:
         splits = compute_nhl_prop_splits(games, "points", 0.5, opposing_goalie="Dustin Wolf")
         assert "vs_goalie" not in splits
 
+    def test_vs_goalie_one_below_floor_is_withheld(self):
+        games = [_game(day=i) for i in range(MIN_VS_GOALIE_SAMPLE - 1)]
+        splits = compute_nhl_prop_splits(games, "points", 0.5, opposing_goalie="Dustin Wolf")
+        assert "vs_goalie" not in splits
+
     def test_vs_goalie_at_or_above_floor_is_included(self):
         games = [_game(day=i) for i in range(MIN_VS_GOALIE_SAMPLE)]
         splits = compute_nhl_prop_splits(games, "points", 0.5, opposing_goalie="Dustin Wolf")
