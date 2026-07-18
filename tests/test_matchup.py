@@ -363,6 +363,36 @@ class TestParseGameContext:
         context = build_game_context(csv_text)
         assert context[("KC", 2025, 10)]["surface"] == "grass"
 
+    def test_weekday_value_is_stripped_of_stray_whitespace(self):
+        from fairline.matchup import build_game_context
+
+        csv_text = (
+            "season,week,home_team,away_team,weekday,gametime,surface,temp,wind\n"
+            "2025,10,KC,BUF,Monday ,20:15,grass,55,8\n"
+        )
+        context = build_game_context(csv_text)
+        assert context[("KC", 2025, 10)]["is_primetime"] is True
+
+    def test_sunday_at_exactly_the_primetime_hour_is_primetime(self):
+        from fairline.matchup import build_game_context
+
+        csv_text = (
+            "season,week,home_team,away_team,weekday,gametime,surface,temp,wind\n"
+            "2025,10,KC,BUF,Sunday,19:00,grass,55,8\n"
+        )
+        context = build_game_context(csv_text)
+        assert context[("KC", 2025, 10)]["is_primetime"] is True
+
+    def test_saturday_late_kickoff_is_not_primetime(self):
+        from fairline.matchup import build_game_context
+
+        csv_text = (
+            "season,week,home_team,away_team,weekday,gametime,surface,temp,wind\n"
+            "2025,10,KC,BUF,Saturday,20:15,grass,55,8\n"
+        )
+        context = build_game_context(csv_text)
+        assert context[("KC", 2025, 10)]["is_primetime"] is False
+
 
 class TestParsePlayerStatsWithContext:
     def test_context_lookup_populates_new_fields(self):

@@ -59,7 +59,7 @@ def build_game_context(games_csv_text: str) -> dict[tuple[str, int, int], dict]:
         # nflverse has a few rows with a trailing space on "grass "; strip so
         # it doesn't read as a distinct surface from "grass"
         surface = (row.get("surface") or "").strip() or None
-        weekday = row.get("weekday", "")
+        weekday = (row.get("weekday") or "").strip()
 
         def _float(key: str) -> float | None:
             try:
