@@ -214,3 +214,27 @@ class MlbPlayerGame(Base):
     total_bases: Mapped[int | None] = mapped_column(Integer)
     strikeouts: Mapped[int | None] = mapped_column(Integer)
     walks: Mapped[int | None] = mapped_column(Integer)
+
+
+class NhlPlayerGame(Base):
+    """One NHL skater's stat line for one game, with the game context the
+    situational splits need (home/away, rest days, opposing starting goalie)."""
+
+    __tablename__ = "nhl_player_games"
+    __table_args__ = (Index("ix_nhl_player_games_player", "player", "season"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    game_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    player: Mapped[str] = mapped_column(String(100), nullable=False)
+    team: Mapped[str] = mapped_column(String(100), nullable=False)
+    opponent: Mapped[str] = mapped_column(String(100), nullable=False)
+    # the opposing starting goalie this skater faced; NULL when not yet derived/backfilled
+    opposing_goalie: Mapped[str | None] = mapped_column(String(100))
+    is_home: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # days since this team's previous game; NULL for a team's first game in a backfilled range
+    rest_days: Mapped[int | None] = mapped_column(Integer)
+    goals: Mapped[int | None] = mapped_column(Integer)
+    assists: Mapped[int | None] = mapped_column(Integer)
+    points: Mapped[int | None] = mapped_column(Integer)
+    shots_on_goal: Mapped[int | None] = mapped_column(Integer)
