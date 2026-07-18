@@ -17,7 +17,9 @@ fairline's event loop.
 from __future__ import annotations
 
 import logging
+import re
 from asyncio import to_thread
+from datetime import datetime
 
 import pandas as pd
 
@@ -151,6 +153,7 @@ async def fetch_mlb_batter_games(start_date: str, end_date: str) -> list[MlbPlay
             starter_map[(game_pk, half)] = name
 
     aggregated = _aggregate_batter_games(df, team_names=team_names, player_names=player_names)
+    game_numbers = _doubleheader_game_numbers(aggregated)
 
     seasons_by_team: dict[str, pd.DataFrame] = {}
     results: list[MlbPlayerGame] = []
@@ -160,7 +163,8 @@ async def fetch_mlb_batter_games(start_date: str, end_date: str) -> list[MlbPlay
             season_year = pd.to_datetime(row["game_date"]).year
             team_code = _TEAM_CODES.get(team, team)
             seasons_by_team[team] = await to_thread(_schedule_for_team, team_code, season_year)
-        context = _lookup_schedule_context(seasons_by_team[team], row["game_date"])
+        game_number = game_numbers.get((team, row["game_pk"]), 1)
+        context = _lookup_schedule_context(seasons_by_team[team], row["game_date"], game_number)
         results.append(
             MlbPlayerGame(
                 season=pd.to_datetime(row["game_date"]).year,
@@ -208,12 +212,60 @@ def _schedule_for_team(team_code: str, season: int) -> pd.DataFrame:
     return pybaseball.schedule_and_record(season, team_code)
 
 
-def _lookup_schedule_context(schedule: pd.DataFrame, game_date) -> dict:
-    if schedule is None or schedule.empty:
+def _doubleheader_game_numbers(aggregated: list[dict]) -> dict[tuple[str, int], int]:
+    """(team, game_pk) -> which game of that team's day this was (1st, 2nd, ...).
+
+    Statcast carries no per-pitch timestamp usable for this (sv_id and
+    tfs_zulu_deprecated were both null in a live pull), so game_pk ascending
+    order within a team's calendar date stands in for chronological order --
+    MLB assigns game_pks sequentially, so the earlier game of a doubleheader
+    always has the lower game_pk.
+    """
+    pks_by_team_date: dict[tuple[str, str], set[int]] = {}
+    for row in aggregated:
+        key = (row["team"], str(pd.to_datetime(row["game_date"]).date()))
+        pks_by_team_date.setdefault(key, set()).add(row["game_pk"])
+
+    game_numbers: dict[tuple[str, int], int] = {}
+    for (team, _date), pks in pks_by_team_date.items():
+        for ordinal, pk in enumerate(sorted(pks), start=1):
+            game_numbers[(team, pk)] = ordinal
+    return game_numbers
+
+
+def _parse_schedule_date(date_str) -> tuple[int, int, int] | None:
+    """'Saturday, Apr 13 (1)' -> (4, 13, 1); month, day, doubleheader game number.
+
+    Baseball-Reference marks the second game of a doubleheader with a "(2)"
+    suffix on the Date field (verified live against schedule_and_record's raw
+    scrape: 2024 NYY schedule has "Saturday, Apr 13 (1)" / "Saturday, Apr 13 (2)").
+    The Date field carries no year, so callers must already know which season
+    they're matching against.
+    """
+    match = re.match(r"^[A-Za-z]+,\s*([A-Za-z]+)\s+(\d+)(?:\s*\((\d)\))?$", str(date_str).strip())
+    if not match:
+        return None
+    month_name, day_str, game_num_str = match.groups()
+    try:
+        month = datetime.strptime(month_name[:3], "%b").month
+    except ValueError:
+        return None
+    return (month, int(day_str), int(game_num_str) if game_num_str else 1)
+
+
+def _lookup_schedule_context(schedule: pd.DataFrame, game_date, game_number: int = 1) -> dict:
+    if schedule is None or schedule.empty or "Date" not in schedule.columns:
         return {}
-    match = schedule[schedule["Date"].astype(str).str.contains(str(pd.to_datetime(game_date).date()), na=False)]
+    target = pd.to_datetime(game_date).date()
+    parsed = schedule["Date"].map(_parse_schedule_date)
+    same_day = parsed.map(lambda p: p is not None and p[0] == target.month and p[1] == target.day)
+    match = schedule[same_day]
     if match.empty:
         return {}
+    if len(match) > 1:
+        exact = match[parsed[same_day].map(lambda p: p[2] == game_number)]
+        if not exact.empty:
+            match = exact
     row = match.iloc[0]
     day_night = "night" if str(row.get("D/N", "")).strip().upper() == "N" else "day"
     return {"day_night": day_night}
