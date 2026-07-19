@@ -23,6 +23,7 @@ dependencies = [
     "rolling-cost-cap>=0.1.0",
     "pybaseball>=2.2",
     "pandas>=2.2",
+    "nba_api>=1.4",
 ]
 
 [project.optional-dependencies]
