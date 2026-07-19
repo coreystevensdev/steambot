@@ -53,3 +53,17 @@ async def fetch_probable_pitchers(client: httpx.AsyncClient, date: str) -> list[
                 "away_pitcher": (away.get("probablePitcher") or {}).get("fullName"),
             })
     return games
+
+
+def resolve_probable_pitcher(
+    games: list[dict], home_team: str, away_team: str, commence_time: datetime, side: str
+) -> str | None:
+    """The probable pitcher for `side` ("home" or "away") in the game matching
+    `home_team`/`away_team` whose commence_time is closest to the snapshot's --
+    the same two teams can appear twice on one date (a doubleheader), so a
+    plain first-match would silently grab the wrong game's starter."""
+    candidates = [g for g in games if g["home_team"] == home_team and g["away_team"] == away_team]
+    if not candidates:
+        return None
+    closest = min(candidates, key=lambda g: abs((g["commence_time"] - commence_time).total_seconds()))
+    return closest.get(f"{side}_pitcher")

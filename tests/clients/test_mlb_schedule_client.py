@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from fairline.clients.mlb_schedule_client import fetch_probable_pitchers
+from fairline.clients.mlb_schedule_client import fetch_probable_pitchers, resolve_probable_pitcher
 
 _BASE = "https://statsapi.mlb.com"
 
@@ -83,3 +83,56 @@ async def test_fetch_probable_pitchers_empty_date_returns_empty_list():
     async with httpx.AsyncClient() as client:
         games = await fetch_probable_pitchers(client, "2026-01-01")
     assert games == []
+
+
+_DOUBLEHEADER_GAMES = [
+    {
+        "home_team": "New York Yankees", "away_team": "Los Angeles Dodgers",
+        "commence_time": datetime(2026, 7, 19, 16, 35, tzinfo=timezone.utc),
+        "home_pitcher": "Cam Schlittler", "away_pitcher": "Yoshinobu Yamamoto",
+    },
+    {
+        "home_team": "New York Yankees", "away_team": "Los Angeles Dodgers",
+        "commence_time": datetime(2026, 7, 19, 23, 20, tzinfo=timezone.utc),
+        "home_pitcher": "Will Warren", "away_pitcher": "Tyler Glasnow",
+    },
+]
+
+
+def test_resolve_probable_pitcher_returns_the_requested_side():
+    pitcher = resolve_probable_pitcher(
+        _DOUBLEHEADER_GAMES, "New York Yankees", "Los Angeles Dodgers",
+        datetime(2026, 7, 19, 16, 35, tzinfo=timezone.utc), "home",
+    )
+    assert pitcher == "Cam Schlittler"
+
+
+def test_resolve_probable_pitcher_disambiguates_doubleheader_by_closest_time():
+    # A snapshot commence_time close to the second game of the doubleheader
+    # must resolve to that game's starters, not the first game's.
+    pitcher = resolve_probable_pitcher(
+        _DOUBLEHEADER_GAMES, "New York Yankees", "Los Angeles Dodgers",
+        datetime(2026, 7, 19, 23, 15, tzinfo=timezone.utc), "away",
+    )
+    assert pitcher == "Tyler Glasnow"
+
+
+def test_resolve_probable_pitcher_returns_none_with_no_matching_game():
+    pitcher = resolve_probable_pitcher(
+        _DOUBLEHEADER_GAMES, "Boston Red Sox", "Tampa Bay Rays",
+        datetime(2026, 7, 19, 17, 35, tzinfo=timezone.utc), "home",
+    )
+    assert pitcher is None
+
+
+def test_resolve_probable_pitcher_returns_none_when_pitcher_not_yet_announced():
+    games = [{
+        "home_team": "Los Angeles Angels", "away_team": "Detroit Tigers",
+        "commence_time": datetime(2026, 7, 19, 20, 7, tzinfo=timezone.utc),
+        "home_pitcher": None, "away_pitcher": None,
+    }]
+    pitcher = resolve_probable_pitcher(
+        games, "Los Angeles Angels", "Detroit Tigers",
+        datetime(2026, 7, 19, 20, 7, tzinfo=timezone.utc), "home",
+    )
+    assert pitcher is None
